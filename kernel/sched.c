@@ -52,7 +52,15 @@ void sched_start(void)
                 : : "r"(ttbr)
             );
 
-            switch_to_user(&tasks[i].frame);
+            /*
+             * Copy frame to the boot stack, NOT the tasks array.
+             * switch_to_user sets SP = &frame, so after eret SP_EL1
+             * will be on the boot stack. If we passed &tasks[i].frame
+             * directly, SP_EL1 would land inside the tasks array and
+             * exception handlers would corrupt task data.
+             */
+            struct trap_frame boot_frame = tasks[i].frame;
+            switch_to_user(&boot_frame);
         }
     }
 
@@ -130,6 +138,7 @@ void schedule(struct trap_frame *frame)
     }
 
     /* Find next ready task (round-robin) */
+    int prev = current_task;
     int next = (current_task + 1) % MAX_TASKS;
     for (int i = 0; i < MAX_TASKS; i++) {
         int idx = (next + i) % MAX_TASKS;
@@ -137,22 +146,22 @@ void schedule(struct trap_frame *frame)
             current_task = idx;
             tasks[idx].state = TASK_RUNNING;
 
-            /* Switch address space: load this task's page tables */
-            uint64_t ttbr = (uint64_t)tasks[idx].ttbr0;
-            __asm__ volatile(
-                "msr ttbr0_el1, %0\n"
-                "isb\n"
-                "tlbi vmalle1is\n"
-                "dsb ish\n"
-                "ic iallu\n"
-                "dsb ish\n"
-                "isb\n"
-                : : "r"(ttbr)
-            );
-
-            /* Load the task's saved state into the frame on the stack,
-             * then return -- vectors.S will restore_regs and eret. */
-            *frame = tasks[idx].frame;
+            /* Only switch address space if we're changing tasks */
+            if (idx != prev) {
+                uint64_t ttbr = (uint64_t)tasks[idx].ttbr0;
+                __asm__ volatile(
+                    "msr ttbr0_el1, %0\n"
+                    "isb\n"
+                    "tlbi vmalle1is\n"
+                    "dsb ish\n"
+                    "ic iallu\n"
+                    "dsb ish\n"
+                    "isb\n"
+                    : : "r"(ttbr)
+                );
+                /* Load saved state when switching to a different task */
+                *frame = tasks[idx].frame;
+            }
             return;
         }
     }

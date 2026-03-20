@@ -31,8 +31,8 @@ KERNEL    = kernel.elf
 KERNEL_BIN = kernel.bin
 USER_ELF  = user/init.elf
 USER_BIN  = user/init.bin
-USER2_ELF = user/task2.elf
-USER2_BIN = user/task2.bin
+USER2_ELF = user/shell.elf
+USER2_BIN = user/shell.bin
 
 .PHONY: all clean run debug
 
@@ -62,16 +62,19 @@ user/init_blob.o: $(USER_BIN)
 user/syscall_stub2.o: user/syscall_stub2.S
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-user/task2.o: user/task2.c
+user/shell.o: user/shell.c
+	$(CC) $(CFLAGS) -Iuser -c $< -o $@
+
+user/printf.o: user/printf.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(USER2_ELF): user/syscall_stub2.o user/task2.o user/user2.ld
-	$(LD) -T user/user2.ld user/syscall_stub2.o user/task2.o -o $@
+$(USER2_ELF): user/syscall_stub2.o user/shell.o user/printf.o user/user2.ld
+	$(LD) -T user/user2.ld user/syscall_stub2.o user/shell.o user/printf.o -o $@
 
 $(USER2_BIN): $(USER2_ELF)
 	$(OBJCOPY) -O binary $< $@
 
-user/task2_blob.o: $(USER2_BIN)
+user/shell_blob.o: $(USER2_BIN)
 	$(OBJCOPY) -I binary -O elf64-littleaarch64 \
 		--rename-section .data=.user2 \
 		$< $@
@@ -84,8 +87,8 @@ user/task2_blob.o: $(USER2_BIN)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(KERNEL): $(BOOT_OBJ) $(KERN_OBJ) user/init_blob.o user/task2_blob.o linker.ld
-	$(LD) -T linker.ld $(BOOT_OBJ) $(KERN_OBJ) user/init_blob.o user/task2_blob.o -o $@
+$(KERNEL): $(BOOT_OBJ) $(KERN_OBJ) user/init_blob.o user/shell_blob.o linker.ld
+	$(LD) -T linker.ld $(BOOT_OBJ) $(KERN_OBJ) user/init_blob.o user/shell_blob.o -o $@
 
 $(KERNEL_BIN): $(KERNEL)
 	$(OBJCOPY) -O binary $< $@
@@ -110,5 +113,5 @@ debug: $(KERNEL_BIN)
 		-S -s
 
 clean:
-	rm -f $(BOOT_OBJ) $(KERN_OBJ) $(USER_OBJ) user/init_blob.o user/syscall_stub2.o user/task2.o user/task2_blob.o
+	rm -f $(BOOT_OBJ) $(KERN_OBJ) $(USER_OBJ) user/init_blob.o user/syscall_stub2.o user/shell.o user/printf.o user/shell_blob.o
 	rm -f $(KERNEL) $(KERNEL_BIN) $(USER_ELF) $(USER_BIN) $(USER2_ELF) $(USER2_BIN)

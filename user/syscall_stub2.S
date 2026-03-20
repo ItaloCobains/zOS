@@ -44,3 +44,10 @@ sys_getc:
     mov     x8, #4          /* SYS_GETC */
     svc     #0
     ret
+
+/* uint64_t sys_uptime(void) */
+.global sys_uptime
+sys_uptime:
+    mov     x8, #5          /* SYS_UPTIME */
+    svc     #0
+    ret

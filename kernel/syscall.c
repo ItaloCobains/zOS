@@ -14,6 +14,7 @@
 #include "syscall.h"
 #include "sched.h"
 #include "uart.h"
+#include "timer.h"
 
 /*
  * sys_write: write a string to the UART.
@@ -63,6 +64,11 @@ void syscall_handler(struct trap_frame *frame)
     case SYS_GETC:
         /* Returns the character read, or -1 if nothing available */
         frame->regs[0] = (uint64_t)uart_getc();
+        break;
+
+    case SYS_UPTIME:
+        /* Returns number of timer ticks since boot */
+        frame->regs[0] = timer_get_ticks();
         break;
 
     default:

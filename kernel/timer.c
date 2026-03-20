@@ -18,6 +18,7 @@
 #include "uart.h"
 
 static uint64_t tick_interval;
+static uint64_t tick_count;
 
 /*
  * Read the timer frequency from CNTFRQ_EL0.
@@ -62,7 +63,13 @@ void timer_init(void)
  */
 void timer_handler(void)
 {
+    tick_count++;
     /* Set next compare value */
     uint64_t next = read_counter() + tick_interval;
     __asm__ volatile("msr cntp_cval_el0, %0" : : "r"(next));
+}
+
+uint64_t timer_get_ticks(void)
+{
+    return tick_count;
 }

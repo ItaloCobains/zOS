@@ -32,9 +32,11 @@ void trap_irq(struct trap_frame *frame)
 
     if (irq == TIMER_IRQ) {
         timer_handler();
-        sched_tick();     /* Decrement sleep counters, wake tasks */
+        sched_tick();
         gic_end_interrupt(irq);
-        schedule(frame);  /* Possibly switch tasks */
+        /* Only reschedule if IRQ interrupted userspace (EL0) */
+        if ((frame->spsr & 0xF) == 0)
+            schedule(frame);
     } else if (irq == 1023) {
         /* Spurious interrupt -- ignore */
     } else {
