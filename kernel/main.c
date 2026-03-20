@@ -12,6 +12,8 @@
 #include "gic.h"
 #include "timer.h"
 #include "sched.h"
+#include "vfs.h"
+#include "devfs.h"
 
 /* Linker symbols for the embedded userspace binary */
 extern char _user_start[];
@@ -92,7 +94,16 @@ void kmain(void)
     /* 6. Scheduler */
     sched_init();
 
-    /* 7. Create userspace tasks */
+    /* 7. Virtual filesystem + devices */
+    vfs_init();
+    vfs_mkdir("/tmp");
+    devfs_init();
+
+    /* 8. Set up FDs: stdin/stdout/stderr -> /dev/console */
+    int console_ino = vfs_lookup("/dev/console");
+    sched_init_fds(console_ino);
+
+    /* 9. Create userspace tasks */
     uint64_t *user_tables = setup_user_task(_user_start, _user_end);
     if (!user_tables) {
         uart_puts("[main] FATAL: could not set up user task 1\n");

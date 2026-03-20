@@ -210,6 +210,57 @@ void sched_tick(void) {
   }
 }
 
+/* Get FD entry for current task. Returns NULL if invalid. */
+struct fd_entry *sched_get_fd(int fd)
+{
+    if (current_task < 0 || fd < 0 || fd >= MAX_FDS)
+        return NULL;
+    struct fd_entry *e = &tasks[current_task].fds[fd];
+    if (e->inode < 0)
+        return NULL;
+    return e;
+}
+
+/* Allocate a new FD for the current task. Returns fd number or -1. */
+int sched_alloc_fd(int inode)
+{
+    if (current_task < 0)
+        return -1;
+    for (int i = 0; i < MAX_FDS; i++) {
+        if (tasks[current_task].fds[i].inode < 0) {
+            tasks[current_task].fds[i].inode = inode;
+            tasks[current_task].fds[i].offset = 0;
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* Free a FD for the current task. */
+void sched_free_fd(int fd)
+{
+    if (current_task < 0 || fd < 0 || fd >= MAX_FDS)
+        return;
+    tasks[current_task].fds[fd].inode = -1;
+    tasks[current_task].fds[fd].offset = 0;
+}
+
+/* Initialize FDs for all tasks: fd 0/1/2 -> console_inode */
+void sched_init_fds(int console_inode)
+{
+    for (int t = 0; t < MAX_TASKS; t++) {
+        for (int f = 0; f < MAX_FDS; f++)
+            tasks[t].fds[f].inode = -1;
+        /* stdin, stdout, stderr -> console */
+        tasks[t].fds[0].inode = console_inode;
+        tasks[t].fds[0].offset = 0;
+        tasks[t].fds[1].inode = console_inode;
+        tasks[t].fds[1].offset = 0;
+        tasks[t].fds[2].inode = console_inode;
+        tasks[t].fds[2].offset = 0;
+    }
+}
+
 int sched_get_tasks(struct task_info *buf, int max) {
   int count = 0;
   for (int i = 0; i < MAX_TASKS && count < max; i++) {

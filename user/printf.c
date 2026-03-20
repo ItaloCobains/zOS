@@ -2,18 +2,18 @@
  * printf.c - Minimal printf implementation for userspace.
  */
 
-extern long sys_write(const char *buf, unsigned long len);
+extern long sys_write(int fd, const char *buf, unsigned long len);
 
 static void write_str(const char *s)
 {
     unsigned long len = 0;
     while (s[len]) len++;
-    sys_write(s, len);
+    sys_write(1, s, len);  /* fd 1 = stdout */
 }
 
 static void write_char(char c)
 {
-    sys_write(&c, 1);
+    sys_write(1, &c, 1);
 }
 
 static void write_int(long value)

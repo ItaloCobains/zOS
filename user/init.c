@@ -6,7 +6,7 @@
  */
 
 /* Syscall declarations (implemented in syscall_stub.S) */
-extern long sys_write(const char *buf, unsigned long len);
+extern long sys_write(int fd, const char *buf, unsigned long len);
 extern void sys_exit(void);
 extern void sys_yield(void);
 extern void sys_sleep(unsigned long ticks);
@@ -22,7 +22,7 @@ static unsigned long strlen(const char *s)
 
 static void print(const char *msg)
 {
-    sys_write(msg, strlen(msg));
+    sys_write(1, msg, strlen(msg));
 }
 
 /*

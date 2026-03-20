@@ -17,7 +17,7 @@ ASFLAGS = -Iinclude
 BOOT_SRC  = boot/start.S boot/vectors.S
 KERN_SRC  = kernel/main.c kernel/uart.c kernel/mm.c kernel/mmu.c \
             kernel/timer.c kernel/gic.c kernel/trap.c kernel/sched.c \
-            kernel/syscall.c kernel/string.c
+            kernel/syscall.c kernel/string.c kernel/vfs.c kernel/devfs.c
 USER_SRC  = user/init.c user/syscall_stub.S
 
 # Object files
