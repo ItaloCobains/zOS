@@ -29,6 +29,38 @@ void sched_init(void)
 }
 
 /*
+ * Start the scheduler. Picks the first READY task and jumps to it.
+ * Does not return.
+ */
+void sched_start(void)
+{
+    for (int i = 0; i < MAX_TASKS; i++) {
+        if (tasks[i].state == TASK_READY) {
+            current_task = i;
+            tasks[i].state = TASK_RUNNING;
+
+            /* Switch to this task's address space */
+            uint64_t ttbr = (uint64_t)tasks[i].ttbr0;
+            __asm__ volatile(
+                "msr ttbr0_el1, %0\n"
+                "isb\n"
+                "tlbi vmalle1is\n"
+                "dsb ish\n"
+                "ic iallu\n"
+                "dsb ish\n"
+                "isb\n"
+                : : "r"(ttbr)
+            );
+
+            switch_to_user(&tasks[i].frame);
+        }
+    }
+
+    uart_puts("[sched] no tasks to start!\n");
+    while (1) __asm__ volatile("wfe");
+}
+
+/*
  * Create a new task that will start executing at `entry_point` in EL0.
  * `user_tables` is the TTBR0 value for this task's address space.
  */
@@ -143,4 +175,35 @@ void sched_exit_task(struct trap_frame *frame)
         num_tasks--;
     }
     schedule(frame);
+}
+
+/*
+ * Put the current task to sleep for `ticks` timer ticks (~10ms each).
+ * The task goes to TASK_SLEEPING and won't be scheduled until the
+ * counter reaches zero.
+ */
+void sched_sleep_task(struct trap_frame *frame, uint64_t ticks)
+{
+    if (current_task >= 0) {
+        tasks[current_task].state = TASK_SLEEPING;
+        tasks[current_task].sleep_ticks = ticks;
+        tasks[current_task].frame = *frame;
+    }
+    schedule(frame);
+}
+
+/*
+ * Called every timer tick. Decrements sleep counters and wakes
+ * tasks whose counter has reached zero.
+ */
+void sched_tick(void)
+{
+    for (int i = 0; i < MAX_TASKS; i++) {
+        if (tasks[i].state == TASK_SLEEPING) {
+            if (tasks[i].sleep_ticks > 0)
+                tasks[i].sleep_ticks--;
+            if (tasks[i].sleep_ticks == 0)
+                tasks[i].state = TASK_READY;
+        }
+    }
 }

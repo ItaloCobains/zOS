@@ -48,6 +48,14 @@ SECTIONS
     }
 
     . = ALIGN(4096);
+
+    .user2 : {
+        _user2_start = .;
+        *(.user2)
+        _user2_end = .;
+    }
+
+    . = ALIGN(4096);
     _kernel_end = .;
 
     /DISCARD/ : {

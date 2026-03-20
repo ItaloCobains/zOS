@@ -55,6 +55,16 @@ void syscall_handler(struct trap_frame *frame)
         schedule(frame);
         break;
 
+    case SYS_SLEEP:
+        /* x0 = number of ticks to sleep (~10ms each) */
+        sched_sleep_task(frame, frame->regs[0]);
+        break;
+
+    case SYS_GETC:
+        /* Returns the character read, or -1 if nothing available */
+        frame->regs[0] = (uint64_t)uart_getc();
+        break;
+
     default:
         uart_puts("[syscall] unknown syscall: ");
         uart_puthex(syscall_num);

@@ -32,6 +32,7 @@ void trap_irq(struct trap_frame *frame)
 
     if (irq == TIMER_IRQ) {
         timer_handler();
+        sched_tick();     /* Decrement sleep counters, wake tasks */
         gic_end_interrupt(irq);
         schedule(frame);  /* Possibly switch tasks */
     } else if (irq == 1023) {

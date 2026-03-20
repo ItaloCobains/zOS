@@ -15,6 +15,7 @@
 #define UART_DR     (*(volatile uint32_t *)(UART_BASE + 0x00))  /* Data register */
 #define UART_FR     (*(volatile uint32_t *)(UART_BASE + 0x18))  /* Flag register */
 #define UART_FR_TXFF (1 << 5)  /* Transmit FIFO full */
+#define UART_FR_RXFE (1 << 4)  /* Receive FIFO empty */
 
 void uart_init(void)
 {
@@ -37,6 +38,17 @@ void uart_puts(const char *s)
         uart_putc(*s);
         s++;
     }
+}
+
+/*
+ * Read one character from the UART. Returns -1 if nothing available.
+ * Non-blocking: checks the receive FIFO and returns immediately.
+ */
+int uart_getc(void)
+{
+    if (UART_FR & UART_FR_RXFE)
+        return -1;  /* FIFO empty, nothing to read */
+    return UART_DR & 0xFF;
 }
 
 void uart_puthex(uint64_t value)

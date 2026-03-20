@@ -17,18 +17,21 @@
 extern char _user_start[];
 extern char _user_end[];
 
+extern char _user2_start[];
+extern char _user2_end[];
+
 /*
  * Copy the userspace binary to its own physical pages and create
  * page tables for it. Returns the TTBR0 value for the task.
  */
-static uint64_t *setup_user_task(void)
+static uint64_t *setup_user_task(char *bin_start, char *bin_end)
 {
-    size_t user_size = (size_t)(_user_end - _user_start);
+    size_t user_size = (size_t)(bin_end - bin_start);
 
     uart_puts("[main] user binary: ");
-    uart_puthex((uint64_t)_user_start);
+    uart_puthex((uint64_t)bin_start);
     uart_puts(" - ");
-    uart_puthex((uint64_t)_user_end);
+    uart_puthex((uint64_t)bin_end);
     uart_puts(" (");
     uart_puthex(user_size);
     uart_puts(" bytes)\n");
@@ -53,7 +56,7 @@ static uint64_t *setup_user_task(void)
     }
 
     /* Copy user binary to allocated pages */
-    uint8_t *src = (uint8_t *)_user_start;
+    uint8_t *src = (uint8_t *)bin_start;
     uint8_t *dst = (uint8_t *)first_page;
     for (size_t i = 0; i < user_size; i++)
         dst[i] = src[i];
@@ -89,46 +92,28 @@ void kmain(void)
     /* 6. Scheduler */
     sched_init();
 
-    /* 7. Create userspace task */
-    uint64_t *user_tables = setup_user_task();
+    /* 7. Create userspace tasks */
+    uint64_t *user_tables = setup_user_task(_user_start, _user_end);
     if (!user_tables) {
-        uart_puts("[main] FATAL: could not set up user task\n");
+        uart_puts("[main] FATAL: could not set up user task 1\n");
         while (1) __asm__ volatile("wfe");
     }
-
-    /* User entry point is at VA 0x00400000 (start of user text) */
     sched_create_task(0x00400000, user_tables);
 
-    uart_puts("[main] starting first user task...\n\n");
+    uint64_t *user2_tables = setup_user_task(_user2_start, _user2_end);
+    if (!user2_tables) {
+        uart_puts("[main] FATAL: could not set up user task 2\n");
+        while (1) __asm__ volatile("wfe");
+    }
+    sched_create_task(0x00400000, user2_tables);
 
-    /*
-     * Start the first task. We build a fake trap_frame and call
-     * switch_to_user, which restores registers and does ERET to EL0.
-     */
-    struct trap_frame boot_frame;
-    for (int i = 0; i < 31; i++)
-        boot_frame.regs[i] = 0;
-    boot_frame.elr  = 0x00400000;     /* User entry point */
-    boot_frame.sp   = 0x00801000;     /* Top of user stack */
-    boot_frame.spsr = 0x00000000;     /* EL0t mode */
+    uart_puts("[main] starting user tasks...\n\n");
 
-    /* Switch address space to user task */
-    __asm__ volatile(
-        "msr ttbr0_el1, %0\n"
-        "isb\n"
-        "tlbi vmalle1is\n"
-        "dsb ish\n"
-        "ic iallu\n"
-        "dsb ish\n"
-        "isb\n"
-        : : "r"(user_tables)
-    );
-
-    /* Enable interrupts and jump to userspace */
-    __asm__ volatile("msr daifclr, #0xF");  /* Unmask all exceptions */
-    switch_to_user(&boot_frame);
+    /* Enable interrupts and let the scheduler pick the first task */
+    __asm__ volatile("msr daifclr, #0xF");
+    sched_start();
 
     /* Should never reach here */
-    uart_puts("[main] ERROR: returned from userspace?!\n");
+    uart_puts("[main] ERROR: returned from sched_start?!\n");
     while (1) __asm__ volatile("wfe");
 }

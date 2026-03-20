@@ -9,6 +9,8 @@
 extern long sys_write(const char *buf, unsigned long len);
 extern void sys_exit(void);
 extern void sys_yield(void);
+extern void sys_sleep(unsigned long ticks);
+extern int  sys_getc(void);
 
 /* Simple strlen since we have no standard library */
 static unsigned long strlen(const char *s)
@@ -29,14 +31,12 @@ static void print(const char *msg)
  */
 void user_main(void)
 {
-    print("Hello from zOS userspace!\n");
-    print("Running in EL0 (user mode).\n");
+    print("[task1] Hello! Sleeping 50 ticks (~500ms) between prints.\n");
 
-    /* Yield a few times to demonstrate scheduling */
-    for (int i = 0; i < 3; i++) {
-        print("Yielding...\n");
-        sys_yield();
+    for (int i = 0; i < 5; i++) {
+        print("[task1] awake!\n");
+        sys_sleep(50);  /* sleep ~500ms (50 ticks * 10ms) */
     }
 
-    print("Userspace program done. Exiting.\n");
+    print("[task1] done. Exiting.\n");
 }
