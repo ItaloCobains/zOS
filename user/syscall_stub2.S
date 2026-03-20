@@ -51,3 +51,10 @@ sys_uptime:
     mov     x8, #5          /* SYS_UPTIME */
     svc     #0
     ret
+
+/* int sys_ps(void *buf, int max) */
+.global sys_ps
+sys_ps:
+    mov x8, #6
+    svc #0
+    ret

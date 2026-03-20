@@ -9,114 +9,111 @@
  * after creating tasks. Subsequent switches happen via timer IRQ.
  */
 
-#include "types.h"
 #include "sched.h"
 #include "mm.h"
+#include "taskinfo.h"
 #include "uart.h"
-
 static struct task tasks[MAX_TASKS];
-static int current_task = -1;  /* Index of currently running task */
+static int current_task = -1; /* Index of currently running task */
 static int num_tasks = 0;
 
-void sched_init(void)
-{
-    for (int i = 0; i < MAX_TASKS; i++) {
-        tasks[i].state = TASK_UNUSED;
-        tasks[i].id = i;
-    }
+void sched_init(void) {
+  for (int i = 0; i < MAX_TASKS; i++) {
+    tasks[i].state = TASK_UNUSED;
+    tasks[i].id = i;
+  }
 
-    uart_puts("[sched] scheduler initialized\n");
+  uart_puts("[sched] scheduler initialized\n");
 }
 
 /*
  * Start the scheduler. Picks the first READY task and jumps to it.
  * Does not return.
  */
-void sched_start(void)
-{
-    for (int i = 0; i < MAX_TASKS; i++) {
-        if (tasks[i].state == TASK_READY) {
-            current_task = i;
-            tasks[i].state = TASK_RUNNING;
+void sched_start(void) {
+  for (int i = 0; i < MAX_TASKS; i++) {
+    if (tasks[i].state == TASK_READY) {
+      current_task = i;
+      tasks[i].state = TASK_RUNNING;
 
-            /* Switch to this task's address space */
-            uint64_t ttbr = (uint64_t)tasks[i].ttbr0;
-            __asm__ volatile(
-                "msr ttbr0_el1, %0\n"
-                "isb\n"
-                "tlbi vmalle1is\n"
-                "dsb ish\n"
-                "ic iallu\n"
-                "dsb ish\n"
-                "isb\n"
-                : : "r"(ttbr)
-            );
+      /* Switch to this task's address space */
+      uint64_t ttbr = (uint64_t)tasks[i].ttbr0;
+      __asm__ volatile("msr ttbr0_el1, %0\n"
+                       "isb\n"
+                       "tlbi vmalle1is\n"
+                       "dsb ish\n"
+                       "ic iallu\n"
+                       "dsb ish\n"
+                       "isb\n"
+                       :
+                       : "r"(ttbr));
 
-            /*
-             * Copy frame to the boot stack, NOT the tasks array.
-             * switch_to_user sets SP = &frame, so after eret SP_EL1
-             * will be on the boot stack. If we passed &tasks[i].frame
-             * directly, SP_EL1 would land inside the tasks array and
-             * exception handlers would corrupt task data.
-             */
-            struct trap_frame boot_frame = tasks[i].frame;
-            switch_to_user(&boot_frame);
-        }
+      /*
+       * Copy frame to the boot stack, NOT the tasks array.
+       * switch_to_user sets SP = &frame, so after eret SP_EL1
+       * will be on the boot stack. If we passed &tasks[i].frame
+       * directly, SP_EL1 would land inside the tasks array and
+       * exception handlers would corrupt task data.
+       */
+      struct trap_frame boot_frame = tasks[i].frame;
+      switch_to_user(&boot_frame);
     }
+  }
 
-    uart_puts("[sched] no tasks to start!\n");
-    while (1) __asm__ volatile("wfe");
+  uart_puts("[sched] no tasks to start!\n");
+  while (1)
+    __asm__ volatile("wfe");
 }
 
 /*
  * Create a new task that will start executing at `entry_point` in EL0.
  * `user_tables` is the TTBR0 value for this task's address space.
  */
-void sched_create_task(uint64_t entry_point, uint64_t *user_tables)
-{
-    if (num_tasks >= MAX_TASKS) {
-        uart_puts("[sched] ERROR: max tasks reached\n");
-        return;
+void sched_create_task(uint64_t entry_point, uint64_t *user_tables) {
+  if (num_tasks >= MAX_TASKS) {
+    uart_puts("[sched] ERROR: max tasks reached\n");
+    return;
+  }
+
+  /* Find an unused slot */
+  int slot = -1;
+  for (int i = 0; i < MAX_TASKS; i++) {
+    if (tasks[i].state == TASK_UNUSED) {
+      slot = i;
+      break;
     }
+  }
+  if (slot < 0)
+    return;
 
-    /* Find an unused slot */
-    int slot = -1;
-    for (int i = 0; i < MAX_TASKS; i++) {
-        if (tasks[i].state == TASK_UNUSED) {
-            slot = i;
-            break;
-        }
-    }
-    if (slot < 0) return;
+  struct task *t = &tasks[slot];
+  t->state = TASK_READY;
+  t->ttbr0 = user_tables;
 
-    struct task *t = &tasks[slot];
-    t->state = TASK_READY;
-    t->ttbr0 = user_tables;
+  /* Allocate a kernel stack for this task (used during exceptions) */
+  t->stack = (uint8_t *)page_alloc();
+  if (!t->stack) {
+    uart_puts("[sched] ERROR: failed to allocate task stack\n");
+    t->state = TASK_UNUSED;
+    return;
+  }
 
-    /* Allocate a kernel stack for this task (used during exceptions) */
-    t->stack = (uint8_t *)page_alloc();
-    if (!t->stack) {
-        uart_puts("[sched] ERROR: failed to allocate task stack\n");
-        t->state = TASK_UNUSED;
-        return;
-    }
+  /* Zero the trap frame */
+  for (int i = 0; i < 31; i++)
+    t->frame.regs[i] = 0;
 
-    /* Zero the trap frame */
-    for (int i = 0; i < 31; i++)
-        t->frame.regs[i] = 0;
+  /* Set up initial trap_frame so switch_to_user lands in userspace */
+  t->frame.elr = entry_point; /* Where to start executing */
+  t->frame.sp = 0x00801000;   /* Top of user stack page (grows down) */
+  t->frame.spsr = 0x00000000; /* EL0t: user mode, interrupts enabled */
 
-    /* Set up initial trap_frame so switch_to_user lands in userspace */
-    t->frame.elr  = entry_point;      /* Where to start executing */
-    t->frame.sp   = 0x00801000;       /* Top of user stack page (grows down) */
-    t->frame.spsr = 0x00000000;       /* EL0t: user mode, interrupts enabled */
+  num_tasks++;
 
-    num_tasks++;
-
-    uart_puts("[sched] created task ");
-    uart_puthex(slot);
-    uart_puts(" at entry ");
-    uart_puthex(entry_point);
-    uart_puts("\n");
+  uart_puts("[sched] created task ");
+  uart_puthex(slot);
+  uart_puts(" at entry ");
+  uart_puthex(entry_point);
+  uart_puts("\n");
 }
 
 /*
@@ -129,61 +126,59 @@ void sched_create_task(uint64_t entry_point, uint64_t *user_tables)
  * We save the current task's state into its task struct, then find
  * the next READY task, load its TTBR0, and call switch_to_user.
  */
-void schedule(struct trap_frame *frame)
-{
-    /* Save current task's state */
-    if (current_task >= 0 && tasks[current_task].state == TASK_RUNNING) {
-        tasks[current_task].frame = *frame;
-        tasks[current_task].state = TASK_READY;
+void schedule(struct trap_frame *frame) {
+  /* Save current task's state */
+  if (current_task >= 0 && tasks[current_task].state == TASK_RUNNING) {
+    tasks[current_task].frame = *frame;
+    tasks[current_task].state = TASK_READY;
+  }
+
+  /* Find next ready task (round-robin) */
+  int prev = current_task;
+  int next = (current_task + 1) % MAX_TASKS;
+  for (int i = 0; i < MAX_TASKS; i++) {
+    int idx = (next + i) % MAX_TASKS;
+    if (tasks[idx].state == TASK_READY) {
+      current_task = idx;
+      tasks[idx].state = TASK_RUNNING;
+
+      /* Only switch address space if we're changing tasks */
+      if (idx != prev) {
+        uint64_t ttbr = (uint64_t)tasks[idx].ttbr0;
+        __asm__ volatile("msr ttbr0_el1, %0\n"
+                         "isb\n"
+                         "tlbi vmalle1is\n"
+                         "dsb ish\n"
+                         "ic iallu\n"
+                         "dsb ish\n"
+                         "isb\n"
+                         :
+                         : "r"(ttbr));
+        /* Load saved state when switching to a different task */
+        *frame = tasks[idx].frame;
+      }
+      return;
     }
+  }
 
-    /* Find next ready task (round-robin) */
-    int prev = current_task;
-    int next = (current_task + 1) % MAX_TASKS;
-    for (int i = 0; i < MAX_TASKS; i++) {
-        int idx = (next + i) % MAX_TASKS;
-        if (tasks[idx].state == TASK_READY) {
-            current_task = idx;
-            tasks[idx].state = TASK_RUNNING;
-
-            /* Only switch address space if we're changing tasks */
-            if (idx != prev) {
-                uint64_t ttbr = (uint64_t)tasks[idx].ttbr0;
-                __asm__ volatile(
-                    "msr ttbr0_el1, %0\n"
-                    "isb\n"
-                    "tlbi vmalle1is\n"
-                    "dsb ish\n"
-                    "ic iallu\n"
-                    "dsb ish\n"
-                    "isb\n"
-                    : : "r"(ttbr)
-                );
-                /* Load saved state when switching to a different task */
-                *frame = tasks[idx].frame;
-            }
-            return;
-        }
-    }
-
-    /* No ready tasks -- idle loop */
-    uart_puts("[sched] no ready tasks, halting\n");
-    while (1) __asm__ volatile("wfe");
+  /* No ready tasks -- idle loop */
+  uart_puts("[sched] no ready tasks, halting\n");
+  while (1)
+    __asm__ volatile("wfe");
 }
 
 /*
  * Kill the current task (called from sys_exit).
  */
-void sched_exit_task(struct trap_frame *frame)
-{
-    if (current_task >= 0) {
-        uart_puts("[sched] task ");
-        uart_puthex(current_task);
-        uart_puts(" exited\n");
-        tasks[current_task].state = TASK_DEAD;
-        num_tasks--;
-    }
-    schedule(frame);
+void sched_exit_task(struct trap_frame *frame) {
+  if (current_task >= 0) {
+    uart_puts("[sched] task ");
+    uart_puthex(current_task);
+    uart_puts(" exited\n");
+    tasks[current_task].state = TASK_DEAD;
+    num_tasks--;
+  }
+  schedule(frame);
 }
 
 /*
@@ -191,28 +186,39 @@ void sched_exit_task(struct trap_frame *frame)
  * The task goes to TASK_SLEEPING and won't be scheduled until the
  * counter reaches zero.
  */
-void sched_sleep_task(struct trap_frame *frame, uint64_t ticks)
-{
-    if (current_task >= 0) {
-        tasks[current_task].state = TASK_SLEEPING;
-        tasks[current_task].sleep_ticks = ticks;
-        tasks[current_task].frame = *frame;
-    }
-    schedule(frame);
+void sched_sleep_task(struct trap_frame *frame, uint64_t ticks) {
+  if (current_task >= 0) {
+    tasks[current_task].state = TASK_SLEEPING;
+    tasks[current_task].sleep_ticks = ticks;
+    tasks[current_task].frame = *frame;
+  }
+  schedule(frame);
 }
 
 /*
  * Called every timer tick. Decrements sleep counters and wakes
  * tasks whose counter has reached zero.
  */
-void sched_tick(void)
-{
-    for (int i = 0; i < MAX_TASKS; i++) {
-        if (tasks[i].state == TASK_SLEEPING) {
-            if (tasks[i].sleep_ticks > 0)
-                tasks[i].sleep_ticks--;
-            if (tasks[i].sleep_ticks == 0)
-                tasks[i].state = TASK_READY;
-        }
+void sched_tick(void) {
+  for (int i = 0; i < MAX_TASKS; i++) {
+    if (tasks[i].state == TASK_SLEEPING) {
+      if (tasks[i].sleep_ticks > 0)
+        tasks[i].sleep_ticks--;
+      if (tasks[i].sleep_ticks == 0)
+        tasks[i].state = TASK_READY;
     }
+  }
+}
+
+int sched_get_tasks(struct task_info *buf, int max) {
+  int count = 0;
+  for (int i = 0; i < MAX_TASKS && count < max; i++) {
+    if (tasks[i].state != TASK_UNUSED) {
+      buf[count].id = tasks[i].id;
+      buf[count].state = tasks[i].state;
+      buf[count].sleep_ticks = tasks[i].sleep_ticks;
+      count++;
+    }
+  }
+  return count;
 }
