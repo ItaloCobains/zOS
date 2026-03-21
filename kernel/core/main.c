@@ -30,6 +30,8 @@ extern char _bin_ps_start[],    _bin_ps_end[];
 extern char _bin_touch_start[], _bin_touch_end[];
 extern char _bin_mkdir_start[], _bin_mkdir_end[];
 extern char _bin_rm_start[],    _bin_rm_end[];
+extern char _bin_edit_start[],  _bin_edit_end[];
+extern char _bin_login_start[], _bin_login_end[];
 
 static void install_bin(const char *path, char *start, char *end)
 {
@@ -39,9 +41,9 @@ static void install_bin(const char *path, char *start, char *end)
     vfs_write(ino, start, size, 0);
 }
 
-static uint64_t *setup_shell(void)
+static uint64_t *setup_init_task(void)
 {
-    size_t size = (size_t)(_bin_shell_end - _bin_shell_start);
+    size_t size = (size_t)(_bin_login_end - _bin_login_start);
     size_t num_pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
 
     uint64_t first_page = (uint64_t)page_alloc();
@@ -50,7 +52,7 @@ static uint64_t *setup_shell(void)
     for (size_t i = 1; i < num_pages; i++)
         page_alloc();
 
-    uint8_t *src = (uint8_t *)_bin_shell_start;
+    uint8_t *src = (uint8_t *)_bin_login_start;
     uint8_t *dst = (uint8_t *)first_page;
     for (size_t i = 0; i < size; i++)
         dst[i] = src[i];
@@ -98,7 +100,9 @@ void kmain(void)
     install_bin("/bin/touch", _bin_touch_start, _bin_touch_end);
     install_bin("/bin/mkdir", _bin_mkdir_start, _bin_mkdir_end);
     install_bin("/bin/rm",    _bin_rm_start,    _bin_rm_end);
-    uart_puts("[main] 8 binaries installed in /bin/\n");
+    install_bin("/bin/edit",  _bin_edit_start,  _bin_edit_end);
+    install_bin("/bin/login", _bin_login_start, _bin_login_end);
+    uart_puts("[main] 10 binaries installed in /bin/\n");
 
     /*
      * Set up FDs:
@@ -118,9 +122,9 @@ void kmain(void)
     }
 
     /* Launch shell */
-    uint64_t *shell_tables = setup_shell();
+    uint64_t *shell_tables = setup_init_task();
     if (!shell_tables) {
-        uart_puts("[main] FATAL: could not set up shell\n");
+        uart_puts("[main] FATAL: could not set up init task\n");
         while (1) __asm__ volatile("wfe");
     }
     sched_create_task(0x00400000, shell_tables);

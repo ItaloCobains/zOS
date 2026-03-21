@@ -89,6 +89,18 @@ SECTIONS
         *(.bin_rm)
         _bin_rm_end = .;
     }
+    . = ALIGN(4096);
+    .bin_edit : {
+        _bin_edit_start = .;
+        *(.bin_edit)
+        _bin_edit_end = .;
+    }
+    . = ALIGN(4096);
+    .bin_login : {
+        _bin_login_start = .;
+        *(.bin_login)
+        _bin_login_end = .;
+    }
 
     . = ALIGN(4096);
     _kernel_end = .;

@@ -238,6 +238,20 @@ int main(const char *startup_args)
             continue;
         }
 
+        /* Check for background: trailing & */
+        int background = 0;
+        {
+            int ll = 0;
+            while (line[ll]) ll++;
+            while (ll > 0 && line[ll-1] == ' ') ll--;
+            if (ll > 0 && line[ll-1] == '&') {
+                background = 1;
+                line[ll-1] = 0;
+                /* Re-parse without & */
+                parse_line(line, &cmd, &args, &redir);
+            }
+        }
+
         /* Build path: /bin/<command> */
         char path[64] = "/bin/";
         int pi = 5;
@@ -285,7 +299,11 @@ int main(const char *startup_args)
                 sys_exit();
             }
         } else {
-            sys_wait(pid);
+            if (background) {
+                printf("[bg] pid %d\n", pid);
+            } else {
+                sys_wait(pid);
+            }
         }
     }
 }

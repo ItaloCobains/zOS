@@ -46,7 +46,7 @@ FS_OBJ   = $(FS_SRC:.c=.o)
 ALL_KERN = $(ARCH_OBJ) $(CORE_OBJ) $(PROC_OBJ) $(MM_OBJ) $(KLIB_OBJ) $(DRV_OBJ) $(FS_OBJ)
 
 # User programs
-USER_BINS    = shell ls cat echo hello ps touch mkdir rm
+USER_BINS    = shell ls cat echo hello ps touch mkdir rm edit login
 USER_COMMON  = user/lib/crt0.o user/lib/syscalls.o user/lib/ulib.o
 
 # Blob objects embedded in the kernel
