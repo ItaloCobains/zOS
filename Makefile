@@ -18,7 +18,7 @@ ARCH_OBJ = $(ARCH_SRC:.S=.o)
 
 # Kernel core
 CORE_SRC = kernel/core/main.c kernel/core/syscall.c kernel/core/trap.c \
-           kernel/core/gui.c
+           kernel/core/gui.c kernel/core/wm.c
 
 # Process management
 PROC_SRC = kernel/proc/sched.c kernel/proc/fork.c kernel/proc/exec.c \
