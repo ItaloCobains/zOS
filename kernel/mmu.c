@@ -250,7 +250,6 @@ uint64_t *mmu_create_user_tables(uint64_t phys_addr, size_t size)
     l2_dev[2] = (uint64_t)l3_text | PT_VALID | PT_TABLE;
     l2_dev[4] = (uint64_t)l3_stack | PT_VALID | PT_TABLE;
 
-    uart_puts("[mmu] user page tables created\n");
     return l1;
 }
 

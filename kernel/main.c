@@ -1,8 +1,7 @@
 /*
  * main.c -- Kernel entry point.
  *
- * Called from start.S after basic hardware init.
- * Initializes all subsystems in order and launches the shell.
+ * Initializes all subsystems and launches the shell.
  */
 
 #include "types.h"
@@ -26,30 +25,14 @@ extern char _bin_touch_start[], _bin_touch_end[];
 extern char _bin_mkdir_start[], _bin_mkdir_end[];
 extern char _bin_rm_start[],    _bin_rm_end[];
 
-/*
- * Install a binary into the ramfs at the given path.
- */
 static void install_bin(const char *path, char *start, char *end)
 {
     size_t size = (size_t)(end - start);
-    int ino = vfs_open(path, 4); /* O_CREATE */
-    if (ino < 0) {
-        uart_puts("[main] ERROR: cannot create ");
-        uart_puts(path);
-        uart_puts("\n");
-        return;
-    }
+    int ino = vfs_open(path, 4);
+    if (ino < 0) return;
     vfs_write(ino, start, size, 0);
-    uart_puts("[main] installed ");
-    uart_puts(path);
-    uart_puts(" (");
-    uart_puthex(size);
-    uart_puts(" bytes)\n");
 }
 
-/*
- * Set up the shell task: load shell binary into pages + create page tables.
- */
 static uint64_t *setup_shell(void)
 {
     size_t size = (size_t)(_bin_shell_end - _bin_shell_start);
@@ -88,7 +71,7 @@ void kmain(void)
     vfs_mkdir("/bin");
     devfs_init();
 
-    /* Install binaries into /bin/ */
+    /* Install user binaries into /bin/ */
     install_bin("/bin/ls",    _bin_ls_start,    _bin_ls_end);
     install_bin("/bin/cat",   _bin_cat_start,   _bin_cat_end);
     install_bin("/bin/echo",  _bin_echo_start,  _bin_echo_end);
@@ -97,20 +80,19 @@ void kmain(void)
     install_bin("/bin/touch", _bin_touch_start, _bin_touch_end);
     install_bin("/bin/mkdir", _bin_mkdir_start, _bin_mkdir_end);
     install_bin("/bin/rm",    _bin_rm_start,    _bin_rm_end);
+    uart_puts("[main] 8 binaries installed in /bin/\n");
 
-    /* Set up FDs */
+    /* Set up FDs: stdin/stdout/stderr -> /dev/console */
     int console_ino = vfs_lookup("/dev/console");
     sched_init_fds(console_ino);
 
-    /* Create shell task */
+    /* Launch shell */
     uint64_t *shell_tables = setup_shell();
     if (!shell_tables) {
         uart_puts("[main] FATAL: could not set up shell\n");
         while (1) __asm__ volatile("wfe");
     }
     sched_create_task(0x00400000, shell_tables);
-
-    uart_puts("[main] starting shell...\n\n");
 
     __asm__ volatile("msr daifclr, #0xF");
     sched_start();

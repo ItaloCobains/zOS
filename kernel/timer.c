@@ -52,9 +52,7 @@ void timer_init(void)
     /* Enable the timer: CNTP_CTL_EL0 bit 0 = enable, bit 1 = mask (0=unmasked) */
     __asm__ volatile("msr cntp_ctl_el0, %0" : : "r"((uint64_t)1));
 
-    uart_puts("[timer] initialized at ");
-    uart_puthex(freq);
-    uart_puts(" Hz, tick every ~10ms\n");
+    uart_puts("[timer] 10ms tick\n");
 }
 
 /*

@@ -110,12 +110,6 @@ void sched_create_task(uint64_t entry_point, uint64_t *user_tables) {
   t->frame.spsr = 0x00000000; /* EL0t: user mode, interrupts enabled */
 
   num_tasks++;
-
-  uart_puts("[sched] created task ");
-  uart_puthex(slot);
-  uart_puts(" at entry ");
-  uart_puthex(entry_point);
-  uart_puts("\n");
 }
 
 /*
@@ -174,10 +168,6 @@ void schedule(struct trap_frame *frame) {
  */
 void sched_exit_task(struct trap_frame *frame) {
   if (current_task >= 0) {
-    uart_puts("[sched] task ");
-    uart_puthex(current_task);
-    uart_puts(" exited\n");
-
     /* Wake parent if it's waiting for us */
     int parent = tasks[current_task].parent_id;
     if (parent >= 0 && tasks[parent].state == TASK_WAITING &&

@@ -42,14 +42,9 @@ void mm_init(void)
     for (size_t i = 0; i < MAX_PAGES / 64; i++)
         bitmap[i] = 0;
 
-    uart_puts("[mm] page allocator initialized\n");
-    uart_puts("[mm] free memory: ");
-    uart_puthex(mem_start);
-    uart_puts(" - ");
-    uart_puthex(RAM_END);
-    uart_puts(" (");
+    uart_puts("[mm] ");
     uart_puthex(total_pages);
-    uart_puts(" pages)\n");
+    uart_puts(" free pages\n");
 }
 
 /*
