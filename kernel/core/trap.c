@@ -38,6 +38,9 @@ void trap_irq(struct trap_frame *frame)
         gic_end_interrupt(irq);
         if ((frame->spsr & 0xF) == 0)
             schedule(frame);
+    } else if (irq >= 32 && irq < 96) {
+        /* Virtio device IRQ -- acknowledge and let polling handle it */
+        gic_end_interrupt(irq);
     } else if (irq == 1023) {
         /* Spurious interrupt */
     } else {

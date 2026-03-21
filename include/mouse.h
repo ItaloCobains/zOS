@@ -10,6 +10,7 @@ struct mouse_state {
 };
 
 void mouse_init(void);
+int  mouse_get_mmio_slot(void);  /* returns which MMIO slot the mouse uses */
 void mouse_poll(void);
 struct mouse_state mouse_get(void);
 

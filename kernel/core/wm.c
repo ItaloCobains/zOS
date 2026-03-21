@@ -122,9 +122,9 @@ static void draw_window(struct window *win)
     }
 }
 
-void wm_draw_all(void)
+int wm_draw_all(void)
 {
-    if (!fb_get_buffer() || !dirty) return;
+    if (!fb_get_buffer() || !dirty) return 0;
     dirty = 0;
 
     /* Desktop background */
@@ -142,6 +142,8 @@ void wm_draw_all(void)
     }
     if (focus_id >= 0 && windows[focus_id].active)
         draw_window(&windows[focus_id]);
+
+    return 1;
 }
 
 void wm_handle_click(int mx, int my)

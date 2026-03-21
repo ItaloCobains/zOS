@@ -14,6 +14,7 @@
 #include "timer.h"
 #include "uart.h"
 #include "vfs.h"
+#include "gui.h"
 
 void syscall_handler(struct trap_frame *frame)
 {
@@ -39,6 +40,7 @@ void syscall_handler(struct trap_frame *frame)
         break;
 
     case SYS_YIELD:
+        gui_tick();  /* update mouse/cursor during idle */
         schedule(frame);
         break;
 

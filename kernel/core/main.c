@@ -17,6 +17,8 @@
 #include "ext2.h"
 #include "fb.h"
 #include "gui.h"
+#include "keyboard.h"
+#include "gfx_console.h"
 
 /* Linker symbols for embedded binaries */
 extern char _bin_shell_start[], _bin_shell_end[];
@@ -75,9 +77,13 @@ void kmain(void)
     vfs_mkdir("/bin");
     devfs_init();
 
-    /* Framebuffer + GUI */
+    /* Framebuffer + GUI (mouse init inside gui_init, then keyboard) */
     fb_init();
     gui_init();
+    keyboard_init();  /* must be after mouse_init (inside gui_init) */
+
+    /* Graphical terminal (after GUI init creates windows) */
+    gfx_console_init();
 
     /* Block device + ext2 filesystem */
     virtio_blk_init();
@@ -94,9 +100,24 @@ void kmain(void)
     install_bin("/bin/rm",    _bin_rm_start,    _bin_rm_end);
     uart_puts("[main] 8 binaries installed in /bin/\n");
 
-    /* Set up FDs: stdin/stdout/stderr -> /dev/console */
-    int console_ino = vfs_lookup("/dev/console");
-    sched_init_fds(console_ino);
+    /*
+     * Set up FDs:
+     *   stdin (fd 0)  -> /dev/console (UART, type in your terminal)
+     *   stdout (fd 1) -> /dev/gtty (graphical window, if available)
+     *   stderr (fd 2) -> /dev/console (UART)
+     */
+    int uart_ino = vfs_lookup("/dev/console");
+    int gtty = gfx_console_inode();
+    sched_init_fds(uart_ino);  /* default all to UART */
+    if (gtty >= 0) {
+        /* Override stdout to graphical terminal */
+        extern struct task tasks[];
+        extern int current_task;
+        for (int t = 0; t < 8; t++) {
+            tasks[t].fds[1].inode = gtty;  /* stdout -> window */
+        }
+        uart_puts("[main] stdout -> graphical terminal\n");
+    }
 
     /* Launch shell */
     uint64_t *shell_tables = setup_shell();

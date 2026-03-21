@@ -28,7 +28,7 @@ struct window {
 void wm_init(void);
 int  wm_create_window(int x, int y, int w, int h, const char *title);
 void wm_close_window(int id);
-void wm_draw_all(void);
+int  wm_draw_all(void);  /* returns 1 if screen was redrawn */
 void wm_handle_click(int mx, int my);
 void wm_handle_drag(int mx, int my);
 void wm_handle_release(void);

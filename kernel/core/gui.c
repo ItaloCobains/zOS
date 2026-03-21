@@ -8,6 +8,7 @@
 #include "gui.h"
 #include "fb.h"
 #include "mouse.h"
+#include "keyboard.h"
 #include "wm.h"
 #include "uart.h"
 
@@ -70,23 +71,7 @@ void gui_init(void)
 
     if (!fb_get_buffer()) return;
 
-    /* Create demo windows */
-    int w1 = wm_create_window(100, 80, 400, 300, "Welcome");
-    if (w1 >= 0) {
-        wm_puts(w1, "Welcome to zOS!\n\n");
-        wm_puts(w1, "This is a graphical window.\n");
-        wm_puts(w1, "You can drag it by the titlebar.\n");
-        wm_puts(w1, "Click [X] to close.\n");
-    }
-
-    int w2 = wm_create_window(350, 200, 350, 250, "System Info");
-    if (w2 >= 0) {
-        wm_puts(w2, "zOS v0.2\n");
-        wm_puts(w2, "Architecture: aarch64\n");
-        wm_puts(w2, "Display: 1024x768x32\n");
-        wm_puts(w2, "Filesystem: ext2 + ramfs\n");
-    }
-
+    /* Windows are created by gfx_console_init and gui later */
     wm_draw_all();
 
     struct mouse_state ms = mouse_get();
@@ -98,6 +83,8 @@ void gui_init(void)
 void gui_tick(void)
 {
     if (!fb_get_buffer()) return;
+
+    keyboard_poll();
 
     struct mouse_state ms = mouse_get();
     int need_cursor_update = 0;
@@ -125,12 +112,16 @@ void gui_tick(void)
 
     prev_buttons = ms.buttons;
 
-    /* Redraw windows if dirty */
-    wm_draw_all();
+    /* Redraw windows if dirty -- invalidates cursor save */
+    int was_dirty = wm_draw_all();
+    if (was_dirty)
+        cursor_saved_x = -1;  /* force cursor redraw without stale restore */
 
-    /* Redraw cursor if moved or screen changed */
-    if (ms.x != cursor_saved_x || ms.y != cursor_saved_y || need_cursor_update) {
-        erase_cursor();
+    /* Redraw cursor if moved or screen was redrawn */
+    if (ms.x != cursor_saved_x || ms.y != cursor_saved_y ||
+        need_cursor_update || was_dirty) {
+        if (!was_dirty)
+            erase_cursor();  /* only erase if screen wasn't fully redrawn */
         draw_cursor(ms.x, ms.y);
     }
 }

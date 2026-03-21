@@ -43,6 +43,10 @@ void gic_init(void)
      */
     GICD_ISENABLER(0) = (1 << TIMER_IRQ);
 
+    /* Also enable virtio-mmio IRQs (48-79 on QEMU virt) */
+    GICD_ISENABLER(1) = 0xFFFFFFFF;  /* IRQs 32-63 */
+    GICD_ISENABLER(2) = 0xFFFFFFFF;  /* IRQs 64-95 */
+
     /*
      * Set timer IRQ priority to 0 (highest).
      * IPRIORITYR: each IRQ gets 8 bits of priority. IRQ 30 is in byte 2

@@ -32,7 +32,7 @@ KLIB_SRC = kernel/lib/string.c
 
 # Drivers
 DRV_SRC  = drivers/uart.c drivers/gic.c drivers/timer.c drivers/virtio_blk.c \
-           drivers/fb.c drivers/mouse.c
+           drivers/fb.c drivers/mouse.c drivers/keyboard.c drivers/gfx_console.c
 
 # Filesystem
 FS_SRC   = fs/vfs.c fs/devfs.c fs/ext2.c
@@ -141,7 +141,8 @@ gui: $(KERNEL_BIN) disk.img
 		-drive file=disk.img,format=raw,if=none,id=disk0 \
 		-device virtio-blk-device,drive=disk0 \
 		-device ramfb \
-		-device virtio-tablet-device
+		-device virtio-mouse-device \
+		-device virtio-keyboard-device
 
 debug: $(KERNEL_BIN)
 	qemu-system-aarch64 \
