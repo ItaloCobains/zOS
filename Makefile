@@ -10,45 +10,53 @@ CFLAGS  = -Wall -Wextra -ffreestanding -nostdlib -nostartfiles \
           -mgeneral-regs-only -Iinclude -O1 -g
 ASFLAGS = -Iinclude
 UCFLAGS = -Wall -Wextra -ffreestanding -nostdlib -nostartfiles \
-          -mgeneral-regs-only -Iuser -O1 -g
+          -mgeneral-regs-only -Iuser/lib -O1 -g
 
-# Kernel sources
-BOOT_SRC  = boot/start.S boot/vectors.S
-KERN_SRC  = kernel/main.c kernel/uart.c kernel/mm.c kernel/mmu.c \
-            kernel/timer.c kernel/gic.c kernel/trap.c kernel/sched.c \
-            kernel/syscall.c kernel/string.c kernel/vfs.c kernel/devfs.c
+# Architecture (assembly)
+ARCH_SRC = arch/start.S arch/vectors.S
+ARCH_OBJ = $(ARCH_SRC:.S=.o)
 
-BOOT_OBJ  = $(BOOT_SRC:.S=.o)
-KERN_OBJ  = $(KERN_SRC:.c=.o)
+# Kernel core
+KERN_SRC = kernel/main.c kernel/sched.c kernel/syscall.c \
+           kernel/trap.c kernel/mm.c kernel/mmu.c kernel/string.c
 
-# User programs (each becomes a separate binary in /bin/)
-USER_BINS  = shell ls cat echo hello ps touch mkdir rm
-USER_COMMON = user/crt0.o user/syscalls.o user/ulib.o
+# Drivers
+DRV_SRC  = drivers/uart.c drivers/gic.c drivers/timer.c
 
-# Targets
+# Filesystem
+FS_SRC   = fs/vfs.c fs/devfs.c
+
+KERN_OBJ = $(KERN_SRC:.c=.o)
+DRV_OBJ  = $(DRV_SRC:.c=.o)
+FS_OBJ   = $(FS_SRC:.c=.o)
+ALL_KERN = $(ARCH_OBJ) $(KERN_OBJ) $(DRV_OBJ) $(FS_OBJ)
+
+# User programs
+USER_BINS    = shell ls cat echo hello ps touch mkdir rm
+USER_COMMON  = user/lib/crt0.o user/lib/syscalls.o user/lib/ulib.o
+
+# Blob objects embedded in the kernel
+BLOB_OBJ = $(foreach b,$(USER_BINS),user/bin/$(b)_blob.o)
+
 KERNEL     = kernel.elf
 KERNEL_BIN = kernel.bin
-
-# Blob objects to embed in the kernel
-BLOB_OBJ   = $(foreach b,$(USER_BINS),user/bin/$(b)_blob.o)
 
 .PHONY: all clean run debug
 
 all: $(KERNEL_BIN)
 
-# --- User common objects ---
+# --- User library ---
 
-user/crt0.o: user/crt0.S
+user/lib/crt0.o: user/lib/crt0.S
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-user/syscalls.o: user/syscalls.S
+user/lib/syscalls.o: user/lib/syscalls.S
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-user/ulib.o: user/ulib.c
+user/lib/ulib.o: user/lib/ulib.c
 	$(CC) $(UCFLAGS) -c $< -o $@
 
-# --- Build each user binary ---
-# Pattern: user/bin/X.c -> user/bin/X.o -> user/bin/X.elf -> user/bin/X.bin -> user/bin/X_blob.o
+# --- User binaries ---
 
 user/bin/%.o: user/bin/%.c
 	$(CC) $(UCFLAGS) -c $< -o $@
@@ -66,14 +74,20 @@ user/bin/%_blob.o: user/bin/%.bin
 
 # --- Kernel ---
 
-%.o: %.S
+arch/%.o: arch/%.S
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-%.o: %.c
+kernel/%.o: kernel/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(KERNEL): $(BOOT_OBJ) $(KERN_OBJ) $(BLOB_OBJ) linker.ld
-	$(LD) -T linker.ld $(BOOT_OBJ) $(KERN_OBJ) $(BLOB_OBJ) -o $@
+drivers/%.o: drivers/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+fs/%.o: fs/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(KERNEL): $(ALL_KERN) $(BLOB_OBJ) kernel.ld
+	$(LD) -T kernel.ld $(ALL_KERN) $(BLOB_OBJ) -o $@
 
 $(KERNEL_BIN): $(KERNEL)
 	$(OBJCOPY) -O binary $< $@
@@ -98,6 +112,6 @@ debug: $(KERNEL_BIN)
 		-S -s
 
 clean:
-	rm -f $(BOOT_OBJ) $(KERN_OBJ) $(USER_COMMON) $(BLOB_OBJ)
+	rm -f $(ALL_KERN) $(USER_COMMON) $(BLOB_OBJ)
 	rm -f user/bin/*.o user/bin/*.elf user/bin/*.bin
 	rm -f $(KERNEL) $(KERNEL_BIN)

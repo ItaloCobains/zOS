@@ -1,3 +1,4 @@
 -Iinclude
+-Iuser/lib
 -ffreestanding
 -nostdlib

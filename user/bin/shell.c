@@ -3,7 +3,7 @@
  * Uses fork+exec+wait. Supports output redirection with '>'.
  */
 
-#include "../ulib.h"
+#include "../lib/ulib.h"
 
 static int readline(char *buf, int max)
 {
