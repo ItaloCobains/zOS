@@ -17,8 +17,17 @@ ARCH_SRC = arch/start.S arch/vectors.S
 ARCH_OBJ = $(ARCH_SRC:.S=.o)
 
 # Kernel core
-KERN_SRC = kernel/main.c kernel/sched.c kernel/syscall.c \
-           kernel/trap.c kernel/mm.c kernel/mmu.c kernel/string.c
+CORE_SRC = kernel/core/main.c kernel/core/syscall.c kernel/core/trap.c
+
+# Process management
+PROC_SRC = kernel/proc/sched.c kernel/proc/fork.c kernel/proc/exec.c \
+           kernel/proc/fd.c
+
+# Memory management
+MM_SRC   = kernel/mm/mm.c kernel/mm/mmu.c
+
+# Kernel library
+KLIB_SRC = kernel/lib/string.c
 
 # Drivers
 DRV_SRC  = drivers/uart.c drivers/gic.c drivers/timer.c
@@ -26,10 +35,13 @@ DRV_SRC  = drivers/uart.c drivers/gic.c drivers/timer.c
 # Filesystem
 FS_SRC   = fs/vfs.c fs/devfs.c
 
-KERN_OBJ = $(KERN_SRC:.c=.o)
+CORE_OBJ = $(CORE_SRC:.c=.o)
+PROC_OBJ = $(PROC_SRC:.c=.o)
+MM_OBJ   = $(MM_SRC:.c=.o)
+KLIB_OBJ = $(KLIB_SRC:.c=.o)
 DRV_OBJ  = $(DRV_SRC:.c=.o)
 FS_OBJ   = $(FS_SRC:.c=.o)
-ALL_KERN = $(ARCH_OBJ) $(KERN_OBJ) $(DRV_OBJ) $(FS_OBJ)
+ALL_KERN = $(ARCH_OBJ) $(CORE_OBJ) $(PROC_OBJ) $(MM_OBJ) $(KLIB_OBJ) $(DRV_OBJ) $(FS_OBJ)
 
 # User programs
 USER_BINS    = shell ls cat echo hello ps touch mkdir rm
@@ -77,7 +89,16 @@ user/bin/%_blob.o: user/bin/%.bin
 arch/%.o: arch/%.S
 	$(AS) $(ASFLAGS) -c $< -o $@
 
-kernel/%.o: kernel/%.c
+kernel/core/%.o: kernel/core/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+kernel/proc/%.o: kernel/proc/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+kernel/mm/%.o: kernel/mm/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+kernel/lib/%.o: kernel/lib/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 drivers/%.o: drivers/%.c
