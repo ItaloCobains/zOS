@@ -14,6 +14,7 @@
 #include "vfs.h"
 #include "devfs.h"
 #include "virtio_blk.h"
+#include "net.h"
 #include "ext2.h"
 #include "fb.h"
 #include "gui.h"
@@ -32,6 +33,8 @@ extern char _bin_mkdir_start[], _bin_mkdir_end[];
 extern char _bin_rm_start[],    _bin_rm_end[];
 extern char _bin_edit_start[],  _bin_edit_end[];
 extern char _bin_login_start[], _bin_login_end[];
+extern char _bin_ping_start[],  _bin_ping_end[];
+extern char _bin_beep_start[],  _bin_beep_end[];
 
 static void install_bin(const char *path, char *start, char *end)
 {
@@ -87,6 +90,9 @@ void kmain(void)
     /* Graphical terminal (after GUI init creates windows) */
     gfx_console_init();
 
+    /* Network */
+    net_init();
+
     /* Block device + ext2 filesystem */
     virtio_blk_init();
     ext2_init();
@@ -102,7 +108,9 @@ void kmain(void)
     install_bin("/bin/rm",    _bin_rm_start,    _bin_rm_end);
     install_bin("/bin/edit",  _bin_edit_start,  _bin_edit_end);
     install_bin("/bin/login", _bin_login_start, _bin_login_end);
-    uart_puts("[main] 10 binaries installed in /bin/\n");
+    install_bin("/bin/ping",  _bin_ping_start,  _bin_ping_end);
+    install_bin("/bin/beep",  _bin_beep_start,  _bin_beep_end);
+    uart_puts("[main] 12 binaries installed in /bin/\n");
 
     /*
      * Set up FDs:

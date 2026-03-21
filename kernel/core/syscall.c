@@ -16,6 +16,7 @@
 #include "vfs.h"
 #include "gui.h"
 #include "pipe.h"
+#include "net.h"
 
 void syscall_handler(struct trap_frame *frame)
 {
@@ -161,6 +162,11 @@ void syscall_handler(struct trap_frame *frame)
         frame->regs[0] = 0;
         break;
     }
+
+    case SYS_PING:
+        frame->regs[0] = (uint64_t)net_ping(
+            (uint32_t)frame->regs[0], (int)frame->regs[1]);
+        break;
 
     default:
         uart_puts("[syscall] unknown syscall: ");

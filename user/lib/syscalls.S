@@ -117,3 +117,9 @@ sys_pipe:
     mov     x8, #18
     svc     #0
     ret
+
+.global sys_ping
+sys_ping:
+    mov     x8, #19
+    svc     #0
+    ret

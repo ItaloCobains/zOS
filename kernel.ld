@@ -101,6 +101,18 @@ SECTIONS
         *(.bin_login)
         _bin_login_end = .;
     }
+    . = ALIGN(4096);
+    .bin_ping : {
+        _bin_ping_start = .;
+        *(.bin_ping)
+        _bin_ping_end = .;
+    }
+    . = ALIGN(4096);
+    .bin_beep : {
+        _bin_beep_start = .;
+        *(.bin_beep)
+        _bin_beep_end = .;
+    }
 
     . = ALIGN(4096);
     _kernel_end = .;

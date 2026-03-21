@@ -32,7 +32,8 @@ KLIB_SRC = kernel/lib/string.c
 
 # Drivers
 DRV_SRC  = drivers/uart.c drivers/gic.c drivers/timer.c drivers/virtio_blk.c \
-           drivers/fb.c drivers/mouse.c drivers/keyboard.c drivers/gfx_console.c
+           drivers/fb.c drivers/mouse.c drivers/keyboard.c drivers/gfx_console.c \
+           drivers/net.c
 
 # Filesystem
 FS_SRC   = fs/vfs.c fs/devfs.c fs/ext2.c fs/pipe.c
@@ -46,7 +47,7 @@ FS_OBJ   = $(FS_SRC:.c=.o)
 ALL_KERN = $(ARCH_OBJ) $(CORE_OBJ) $(PROC_OBJ) $(MM_OBJ) $(KLIB_OBJ) $(DRV_OBJ) $(FS_OBJ)
 
 # User programs
-USER_BINS    = shell ls cat echo hello ps touch mkdir rm edit login
+USER_BINS    = shell ls cat echo hello ps touch mkdir rm edit login ping beep
 USER_COMMON  = user/lib/crt0.o user/lib/syscalls.o user/lib/ulib.o
 
 # Blob objects embedded in the kernel
@@ -142,7 +143,9 @@ gui: $(KERNEL_BIN) disk.img
 		-device virtio-blk-device,drive=disk0 \
 		-device ramfb \
 		-device virtio-mouse-device \
-		-device virtio-keyboard-device
+		-device virtio-keyboard-device \
+		-netdev user,id=net0 \
+		-device virtio-net-device,netdev=net0
 
 debug: $(KERNEL_BIN)
 	qemu-system-aarch64 \
