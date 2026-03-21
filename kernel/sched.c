@@ -11,6 +11,8 @@
 
 #include "sched.h"
 #include "mm.h"
+#include "mmu.h"
+#include "vfs.h"
 #include "taskinfo.h"
 #include "uart.h"
 static struct task tasks[MAX_TASKS];
@@ -175,7 +177,20 @@ void sched_exit_task(struct trap_frame *frame) {
     uart_puts("[sched] task ");
     uart_puthex(current_task);
     uart_puts(" exited\n");
-    tasks[current_task].state = TASK_DEAD;
+
+    /* Wake parent if it's waiting for us */
+    int parent = tasks[current_task].parent_id;
+    if (parent >= 0 && tasks[parent].state == TASK_WAITING &&
+        tasks[parent].wait_for == current_task) {
+        tasks[parent].state = TASK_READY;
+        tasks[parent].frame.regs[0] = (uint64_t)current_task; /* wait return value */
+    }
+
+    /* Free address space */
+    mmu_free_user_tables(tasks[current_task].ttbr0);
+    tasks[current_task].ttbr0 = NULL;
+
+    tasks[current_task].state = TASK_UNUSED;
     num_tasks--;
   }
   schedule(frame);
@@ -272,4 +287,181 @@ int sched_get_tasks(struct task_info *buf, int max) {
     }
   }
   return count;
+}
+
+int sched_getpid(void)
+{
+    return current_task;
+}
+
+/*
+ * Fork the current process. Creates a child with COW page tables.
+ * Returns child pid to parent, 0 to child.
+ */
+int sched_fork(struct trap_frame *frame)
+{
+    /* Find a free task slot */
+    int child_id = -1;
+    for (int i = 0; i < MAX_TASKS; i++) {
+        if (tasks[i].state == TASK_UNUSED) {
+            child_id = i;
+            break;
+        }
+    }
+    if (child_id < 0) return -1;
+
+    struct task *parent = &tasks[current_task];
+    struct task *child  = &tasks[child_id];
+
+    /* Fork page tables with COW */
+    uint64_t *child_tables = mmu_fork_tables(parent->ttbr0);
+    if (!child_tables) return -1;
+
+    /* Copy parent task state to child */
+    child->id = child_id;
+    child->state = TASK_READY;
+    child->sleep_ticks = 0;
+    child->parent_id = current_task;
+    child->wait_for = -1;
+    child->frame = *frame;
+    child->stack = (uint8_t *)page_alloc();
+    child->ttbr0 = child_tables;
+
+    /* Copy FD table */
+    for (int i = 0; i < MAX_FDS; i++)
+        child->fds[i] = parent->fds[i];
+
+    /* Child gets return value 0 */
+    child->frame.regs[0] = 0;
+
+    num_tasks++;
+
+    /* Parent gets child pid */
+    return child_id;
+}
+
+/*
+ * Replace current process with a new binary from the filesystem.
+ * `args` is copied to the top of the user stack so main() can read it.
+ * The args string is placed at VA 0x00800F00 (near top of stack page).
+ * x0 is set to point to it.
+ */
+int sched_exec(const char *path, const char *args, struct trap_frame *frame)
+{
+    /* Copy args to kernel buffer BEFORE freeing old address space */
+    char args_buf[256];
+    args_buf[0] = 0;
+    if (args) {
+        int i = 0;
+        while (args[i] && i < 254) {
+            args_buf[i] = args[i];
+            i++;
+        }
+        args_buf[i] = 0;
+    }
+
+    /* Also copy path since it's in user memory */
+    char path_buf[64];
+    {
+        int i = 0;
+        while (path[i] && i < 62) {
+            path_buf[i] = path[i];
+            i++;
+        }
+        path_buf[i] = 0;
+    }
+
+    int ino = vfs_open(path_buf, 0);
+    if (ino < 0) return -1;
+
+    struct stat st;
+    if (vfs_stat(path_buf, &st) < 0) return -1;
+
+    size_t bin_size = st.size;
+    if (bin_size == 0) return -1;
+
+    size_t num_pages = (bin_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    uint64_t first_page = (uint64_t)page_alloc();
+    if (!first_page) return -1;
+
+    for (size_t i = 1; i < num_pages; i++)
+        page_alloc();
+
+    vfs_read(ino, (void *)first_page, bin_size, 0);
+
+    uint64_t *old_tables = tasks[current_task].ttbr0;
+    uint64_t *new_tables = mmu_create_user_tables(first_page, bin_size);
+    if (!new_tables) return -1;
+
+    mmu_free_user_tables(old_tables);
+    tasks[current_task].ttbr0 = new_tables;
+
+    /* Switch to new address space */
+    __asm__ volatile(
+        "msr ttbr0_el1, %0\n"
+        "isb\n"
+        "tlbi vmalle1is\n"
+        "dsb ish\n"
+        "ic iallu\n"
+        "dsb ish\n"
+        "isb\n"
+        : : "r"(new_tables)
+    );
+
+    /*
+     * Copy args string to user stack page at VA 0x00800F00.
+     * The stack page is physically mapped -- we need the physical
+     * address to write to it from kernel space.
+     * We walk the new page tables to find it.
+     */
+    uint64_t args_va = 0x00800F00;
+    /* The stack page physical address: walk L1[0] -> L2[4] -> L3[0] */
+    uint64_t *l2 = (uint64_t *)(new_tables[0] & 0x0000FFFFFFFFF000UL);
+    uint64_t *l3 = (uint64_t *)(l2[4] & 0x0000FFFFFFFFF000UL);
+    uint64_t stack_phys = l3[0] & 0x0000FFFFFFFFF000UL;
+    char *args_dest = (char *)(stack_phys + 0xF00);  /* offset within page */
+
+    {
+        int i = 0;
+        while (args_buf[i] && i < 254) {
+            args_dest[i] = args_buf[i];
+            i++;
+        }
+        args_dest[i] = 0;
+    }
+
+    /* Reset trap frame */
+    for (int i = 0; i < 31; i++)
+        frame->regs[i] = 0;
+    frame->regs[0] = args_va;     /* x0 = pointer to args string */
+    frame->elr  = 0x00400000;
+    frame->sp   = 0x00800F00;     /* stack below the args */
+    frame->spsr = 0x00000000;
+
+    return 0;
+}
+
+/*
+ * Wait for a child process to exit.
+ * Blocks the current task until the child terminates.
+ */
+void sched_wait(int child_pid, struct trap_frame *frame)
+{
+    if (child_pid < 0 || child_pid >= MAX_TASKS) {
+        frame->regs[0] = (uint64_t)-1;
+        return;
+    }
+
+    /* If child already exited, return immediately */
+    if (tasks[child_pid].state == TASK_DEAD ||
+        tasks[child_pid].state == TASK_UNUSED) {
+        frame->regs[0] = (uint64_t)child_pid;
+        return;
+    }
+
+    /* Block until child exits */
+    tasks[current_task].state = TASK_WAITING;
+    tasks[current_task].wait_for = child_pid;
+    tasks[current_task].frame = *frame;
+    schedule(frame);
 }

@@ -15,6 +15,7 @@ enum task_state {
   TASK_READY,
   TASK_RUNNING,
   TASK_SLEEPING,
+  TASK_WAITING,
   TASK_DEAD
 };
 
@@ -26,10 +27,12 @@ struct fd_entry {
 struct task {
   int id;
   enum task_state state;
-  uint64_t sleep_ticks;    /* ticks remaining for TASK_SLEEPING */
-  struct trap_frame frame; /* saved registers */
-  uint8_t *stack;  /* base of kernel stack (for syscall/interrupt handling) */
-  uint64_t *ttbr0; /* user page table base */
+  uint64_t sleep_ticks;
+  int parent_id;             /* who to wake on exit (-1 = no parent) */
+  int wait_for;              /* child pid we're waiting for (-1 = none) */
+  struct trap_frame frame;
+  uint8_t *stack;
+  uint64_t *ttbr0;
   struct fd_entry fds[MAX_FDS];
 };
 
@@ -47,6 +50,12 @@ struct fd_entry *sched_get_fd(int fd);
 int sched_alloc_fd(int inode);
 void sched_free_fd(int fd);
 void sched_init_fds(int console_inode);
+
+/* fork, exec, wait */
+int  sched_fork(struct trap_frame *frame);
+int  sched_exec(const char *path, const char *args, struct trap_frame *frame);
+void sched_wait(int child_pid, struct trap_frame *frame);
+int  sched_getpid(void);
 
 /* Defined in vectors.S */
 extern void switch_to_user(struct trap_frame *frame);

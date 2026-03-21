@@ -22,6 +22,9 @@
 /* Bitmap: one bit per page. Array of 64-bit words. */
 static uint64_t bitmap[MAX_PAGES / 64];
 
+/* Reference count per page for COW. 0 = free, 1 = one owner, 2+ = shared */
+static uint8_t refcount[MAX_PAGES];
+
 /* Where allocatable memory starts (page-aligned, after kernel image) */
 static uint64_t mem_start;
 static uint64_t total_pages;
@@ -67,11 +70,12 @@ void *page_alloc(void)
             bitmap[word] |= (1UL << bit);
             uint64_t addr = RAM_BASE + i * PAGE_SIZE;
 
-            /* Zero the page */
+            /* Zero the page and set refcount to 1 */
             uint64_t *p = (uint64_t *)addr;
             for (int j = 0; j < (int)(PAGE_SIZE / sizeof(uint64_t)); j++)
                 p[j] = 0;
 
+            refcount[i] = 1;
             return (void *)addr;
         }
     }
@@ -98,5 +102,41 @@ void page_free(void *addr)
     uint64_t word = page / 64;
     uint64_t bit  = page % 64;
 
+    refcount[page] = 0;
     bitmap[word] &= ~(1UL << bit);
+}
+
+static uint64_t addr_to_page(uint64_t a)
+{
+    return (a - RAM_BASE) / PAGE_SIZE;
+}
+
+void page_ref(void *addr)
+{
+    uint64_t a = (uint64_t)addr;
+    if (a < RAM_BASE || a >= RAM_END)
+        return;
+    refcount[addr_to_page(a)]++;
+}
+
+void page_unref(void *addr)
+{
+    uint64_t a = (uint64_t)addr;
+    if (a < RAM_BASE || a >= RAM_END)
+        return;
+
+    uint64_t page = addr_to_page(a);
+    if (refcount[page] > 1) {
+        refcount[page]--;
+    } else {
+        page_free(addr);
+    }
+}
+
+int page_get_ref(void *addr)
+{
+    uint64_t a = (uint64_t)addr;
+    if (a < RAM_BASE || a >= RAM_END)
+        return 0;
+    return refcount[addr_to_page(a)];
 }

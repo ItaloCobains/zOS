@@ -18,6 +18,10 @@
 #define SYS_MKDIR  11
 #define SYS_READDIR 12
 #define SYS_UNLINK 13
+#define SYS_FORK   14
+#define SYS_EXEC   15
+#define SYS_WAIT   16
+#define SYS_GETPID 17
 
 void syscall_handler(struct trap_frame *frame);
 

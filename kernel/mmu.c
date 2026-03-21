@@ -253,3 +253,179 @@ uint64_t *mmu_create_user_tables(uint64_t phys_addr, size_t size)
     uart_puts("[mmu] user page tables created\n");
     return l1;
 }
+
+/* Mask to extract physical address from a page table entry */
+#define PT_ADDR_MASK  0x0000FFFFFFFFF000UL
+#define PT_AP_MASK    (3UL << 6)
+
+/*
+ * Fork page tables with COW.
+ *
+ * Creates a new set of page tables for the child process.
+ * User pages (L3 entries) are shared with the parent but marked
+ * read-only in BOTH parent and child. Physical page refcounts
+ * are incremented. When either process writes, a page fault
+ * triggers a copy (handled by mmu_handle_cow).
+ */
+uint64_t *mmu_fork_tables(uint64_t *parent_l1)
+{
+    uint64_t *child_l1 = (uint64_t *)page_alloc();
+    if (!child_l1) return NULL;
+
+    /* Copy kernel mappings directly */
+    child_l1[1] = parent_l1[1];  /* kernel RAM */
+
+    /* Get parent's L2 (device + user mappings) */
+    uint64_t *parent_l2 = (uint64_t *)(parent_l1[0] & PT_ADDR_MASK);
+
+    /* Allocate child's L2 -- copy device entries from parent */
+    uint64_t *child_l2 = (uint64_t *)page_alloc();
+    if (!child_l2) return NULL;
+
+    for (int i = 0; i < 512; i++)
+        child_l2[i] = parent_l2[i];
+
+    child_l1[0] = (uint64_t)child_l2 | PT_VALID | PT_TABLE;
+
+    /*
+     * For each L3 table in the parent (user text and stack),
+     * create a new L3 table in the child. Share the physical pages
+     * but mark them read-only in BOTH parent and child.
+     */
+    int l2_indices[] = {2, 4};  /* L2 idx 2 = text (0x400000), idx 4 = stack (0x800000) */
+    int num_l2 = 2;
+
+    for (int li = 0; li < num_l2; li++) {
+        int idx = l2_indices[li];
+
+        if (!(parent_l2[idx] & PT_VALID))
+            continue;
+
+        uint64_t *parent_l3 = (uint64_t *)(parent_l2[idx] & PT_ADDR_MASK);
+        uint64_t *child_l3 = (uint64_t *)page_alloc();
+        if (!child_l3) return NULL;
+
+        for (int i = 0; i < 512; i++) {
+            if (!(parent_l3[i] & PT_VALID))
+                continue;
+
+            uint64_t phys = parent_l3[i] & PT_ADDR_MASK;
+
+            /* Make entry read-only for COW */
+            uint64_t entry = parent_l3[i];
+            entry &= ~PT_AP_MASK;
+            entry |= PT_AP_RO_ALL;  /* read-only for EL0 and EL1 */
+
+            /* Mark parent as read-only too */
+            parent_l3[i] = entry;
+
+            /* Child gets same entry (read-only, same physical page) */
+            child_l3[i] = entry;
+
+            /* Increment physical page refcount */
+            page_ref((void *)phys);
+        }
+
+        child_l2[idx] = (uint64_t)child_l3 | PT_VALID | PT_TABLE;
+    }
+
+    /* Flush TLB so parent sees the read-only change */
+    __asm__ volatile("tlbi vmalle1is; dsb ish; isb");
+
+    return child_l1;
+}
+
+/*
+ * Handle a COW page fault.
+ *
+ * Called when a write to a read-only page causes a Data Abort.
+ * If the page has refcount > 1, we allocate a new page, copy the
+ * content, and remap as read-write. If refcount == 1, just remap
+ * as read-write (we're the only owner).
+ *
+ * Returns 1 if COW was handled, 0 if not a COW fault.
+ */
+int mmu_handle_cow(uint64_t *l1, uint64_t fault_addr)
+{
+    /* Walk page tables to find the L3 entry */
+    if (!(l1[0] & PT_VALID))
+        return 0;
+
+    uint64_t *l2 = (uint64_t *)(l1[0] & PT_ADDR_MASK);
+    int l2_idx = (fault_addr >> 21) & 0x1FF;
+
+    if (!(l2[l2_idx] & PT_VALID) || !(l2[l2_idx] & PT_TABLE))
+        return 0;
+
+    uint64_t *l3 = (uint64_t *)(l2[l2_idx] & PT_ADDR_MASK);
+    int l3_idx = (fault_addr >> 12) & 0x1FF;
+
+    if (!(l3[l3_idx] & PT_VALID))
+        return 0;
+
+    /* Check if this is a read-only page (COW candidate) */
+    uint64_t entry = l3[l3_idx];
+    uint64_t ap = entry & PT_AP_MASK;
+    if (ap != PT_AP_RO_ALL)
+        return 0;  /* Not read-only, not a COW fault */
+
+    uint64_t old_phys = entry & PT_ADDR_MASK;
+    int ref = page_get_ref((void *)old_phys);
+
+    if (ref > 1) {
+        /* Multiple owners: copy the page */
+        void *new_page = page_alloc();
+        if (!new_page) return 0;
+
+        uint8_t *src = (uint8_t *)old_phys;
+        uint8_t *dst = (uint8_t *)new_page;
+        for (int i = 0; i < PAGE_SIZE; i++)
+            dst[i] = src[i];
+
+        /* Update L3 entry to point to new page, make writable */
+        l3[l3_idx] = (uint64_t)new_page
+            | (entry & ~(PT_ADDR_MASK | PT_AP_MASK))
+            | PT_AP_RW_ALL;
+
+        /* Decrement old page refcount */
+        page_unref((void *)old_phys);
+    } else {
+        /* Only owner: just make it writable */
+        l3[l3_idx] = (entry & ~PT_AP_MASK) | PT_AP_RW_ALL;
+    }
+
+    /* Flush TLB for the faulting address */
+    __asm__ volatile("tlbi vmalle1is; dsb ish; isb");
+
+    return 1;
+}
+
+/*
+ * Free user page tables and decrement refcounts for mapped pages.
+ * Used by exec() to release old address space.
+ */
+void mmu_free_user_tables(uint64_t *l1)
+{
+    if (!l1) return;
+
+    uint64_t *l2 = (uint64_t *)(l1[0] & PT_ADDR_MASK);
+    int l2_indices[] = {2, 4};
+
+    for (int li = 0; li < 2; li++) {
+        int idx = l2_indices[li];
+        if (!(l2[idx] & PT_VALID) || !(l2[idx] & PT_TABLE))
+            continue;
+
+        uint64_t *l3 = (uint64_t *)(l2[idx] & PT_ADDR_MASK);
+        for (int i = 0; i < 512; i++) {
+            if (l3[i] & PT_VALID) {
+                uint64_t phys = l3[i] & PT_ADDR_MASK;
+                page_unref((void *)phys);
+            }
+        }
+        page_free(l3);
+    }
+
+    page_free(l2);
+    page_free(l1);
+}

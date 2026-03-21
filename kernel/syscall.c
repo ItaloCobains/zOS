@@ -118,11 +118,32 @@ void syscall_handler(struct trap_frame *frame)
     }
 
     case SYS_UNLINK: {
-        /* unlink(path) -> 0 or -1 */
         const char *path = (const char *)frame->regs[0];
         frame->regs[0] = (uint64_t)vfs_unlink(path);
         break;
     }
+
+    case SYS_FORK:
+        frame->regs[0] = (uint64_t)sched_fork(frame);
+        break;
+
+    case SYS_EXEC: {
+        /* exec(path, args) */
+        const char *path = (const char *)frame->regs[0];
+        const char *args = (const char *)frame->regs[1];
+        int ret = sched_exec(path, args, frame);
+        if (ret < 0)
+            frame->regs[0] = (uint64_t)-1;
+        break;
+    }
+
+    case SYS_WAIT:
+        sched_wait((int)frame->regs[0], frame);
+        break;
+
+    case SYS_GETPID:
+        frame->regs[0] = (uint64_t)sched_getpid();
+        break;
 
     default:
         uart_puts("[syscall] unknown syscall: ");

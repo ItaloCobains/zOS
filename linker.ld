@@ -2,21 +2,16 @@
  * zOS Linker Script for aarch64 QEMU virt machine.
  *
  * QEMU virt loads the kernel at 0x40080000 (membase 0x40000000 + 0x80000).
- * This is the standard aarch64 kernel load offset.
- * We lay out sections sequentially: .text, .rodata, .data, .bss.
- * Symbols _bss_start/_bss_end are used by start.S to zero BSS.
- * _kernel_end marks where free memory begins for the page allocator.
  */
 
 ENTRY(_start)
 
 SECTIONS
 {
-    /* QEMU virt loads us here (membase + 0x80000) */
     . = 0x40080000;
 
     .text : {
-        *(.text.boot)    /* boot code first -- _start must be at load address */
+        *(.text.boot)
         *(.text .text.*)
     }
 
@@ -40,19 +35,59 @@ SECTIONS
 
     . = ALIGN(4096);
 
-    /* Embedded userspace binary */
-    .user : {
-        _user_start = .;
-        *(.user)
-        _user_end = .;
+    /* Embedded userspace binaries */
+    .bin_shell : {
+        _bin_shell_start = .;
+        *(.bin_shell)
+        _bin_shell_end = .;
     }
-
     . = ALIGN(4096);
-
-    .user2 : {
-        _user2_start = .;
-        *(.user2)
-        _user2_end = .;
+    .bin_ls : {
+        _bin_ls_start = .;
+        *(.bin_ls)
+        _bin_ls_end = .;
+    }
+    . = ALIGN(4096);
+    .bin_cat : {
+        _bin_cat_start = .;
+        *(.bin_cat)
+        _bin_cat_end = .;
+    }
+    . = ALIGN(4096);
+    .bin_echo : {
+        _bin_echo_start = .;
+        *(.bin_echo)
+        _bin_echo_end = .;
+    }
+    . = ALIGN(4096);
+    .bin_hello : {
+        _bin_hello_start = .;
+        *(.bin_hello)
+        _bin_hello_end = .;
+    }
+    . = ALIGN(4096);
+    .bin_ps : {
+        _bin_ps_start = .;
+        *(.bin_ps)
+        _bin_ps_end = .;
+    }
+    . = ALIGN(4096);
+    .bin_touch : {
+        _bin_touch_start = .;
+        *(.bin_touch)
+        _bin_touch_end = .;
+    }
+    . = ALIGN(4096);
+    .bin_mkdir : {
+        _bin_mkdir_start = .;
+        *(.bin_mkdir)
+        _bin_mkdir_end = .;
+    }
+    . = ALIGN(4096);
+    .bin_rm : {
+        _bin_rm_start = .;
+        *(.bin_rm)
+        _bin_rm_end = .;
     }
 
     . = ALIGN(4096);

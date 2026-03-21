@@ -2,7 +2,7 @@
  * main.c -- Kernel entry point.
  *
  * Called from start.S after basic hardware init.
- * Initializes all subsystems in order and launches userspace.
+ * Initializes all subsystems in order and launches the shell.
  */
 
 #include "types.h"
@@ -15,116 +15,105 @@
 #include "vfs.h"
 #include "devfs.h"
 
-/* Linker symbols for the embedded userspace binary */
-extern char _user_start[];
-extern char _user_end[];
-
-extern char _user2_start[];
-extern char _user2_end[];
+/* Linker symbols for embedded binaries */
+extern char _bin_shell_start[], _bin_shell_end[];
+extern char _bin_ls_start[],    _bin_ls_end[];
+extern char _bin_cat_start[],   _bin_cat_end[];
+extern char _bin_echo_start[],  _bin_echo_end[];
+extern char _bin_hello_start[], _bin_hello_end[];
+extern char _bin_ps_start[],    _bin_ps_end[];
+extern char _bin_touch_start[], _bin_touch_end[];
+extern char _bin_mkdir_start[], _bin_mkdir_end[];
+extern char _bin_rm_start[],    _bin_rm_end[];
 
 /*
- * Copy the userspace binary to its own physical pages and create
- * page tables for it. Returns the TTBR0 value for the task.
+ * Install a binary into the ramfs at the given path.
  */
-static uint64_t *setup_user_task(char *bin_start, char *bin_end)
+static void install_bin(const char *path, char *start, char *end)
 {
-    size_t user_size = (size_t)(bin_end - bin_start);
-
-    uart_puts("[main] user binary: ");
-    uart_puthex((uint64_t)bin_start);
-    uart_puts(" - ");
-    uart_puthex((uint64_t)bin_end);
+    size_t size = (size_t)(end - start);
+    int ino = vfs_open(path, 4); /* O_CREATE */
+    if (ino < 0) {
+        uart_puts("[main] ERROR: cannot create ");
+        uart_puts(path);
+        uart_puts("\n");
+        return;
+    }
+    vfs_write(ino, start, size, 0);
+    uart_puts("[main] installed ");
+    uart_puts(path);
     uart_puts(" (");
-    uart_puthex(user_size);
+    uart_puthex(size);
     uart_puts(" bytes)\n");
-
-    /*
-     * Allocate physical pages and copy the user binary there.
-     * This gives us a clean copy separate from the kernel image.
-     */
-    size_t num_pages = (user_size + PAGE_SIZE - 1) / PAGE_SIZE;
-    uint64_t first_page = (uint64_t)page_alloc();
-    if (!first_page) {
-        uart_puts("[main] ERROR: failed to allocate user pages\n");
-        return NULL;
-    }
-
-    /* Allocate remaining pages (they must be contiguous for simplicity) */
-    for (size_t i = 1; i < num_pages; i++) {
-        void *p = page_alloc();
-        /* We rely on the allocator giving contiguous pages since
-         * we're allocating early when memory is empty */
-        (void)p;
-    }
-
-    /* Copy user binary to allocated pages */
-    uint8_t *src = (uint8_t *)bin_start;
-    uint8_t *dst = (uint8_t *)first_page;
-    for (size_t i = 0; i < user_size; i++)
-        dst[i] = src[i];
-
-    /* Create page tables mapping these pages at VA 0x00400000 */
-    uint64_t *tables = mmu_create_user_tables(first_page, user_size);
-    return tables;
 }
 
 /*
- * kmain -- kernel entry point, called from start.S.
+ * Set up the shell task: load shell binary into pages + create page tables.
  */
+static uint64_t *setup_shell(void)
+{
+    size_t size = (size_t)(_bin_shell_end - _bin_shell_start);
+    size_t num_pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    uint64_t first_page = (uint64_t)page_alloc();
+    if (!first_page) return NULL;
+
+    for (size_t i = 1; i < num_pages; i++)
+        page_alloc();
+
+    uint8_t *src = (uint8_t *)_bin_shell_start;
+    uint8_t *dst = (uint8_t *)first_page;
+    for (size_t i = 0; i < size; i++)
+        dst[i] = src[i];
+
+    return mmu_create_user_tables(first_page, size);
+}
+
 void kmain(void)
 {
-    /* 1. UART first -- we need output for debugging everything else */
     uart_init();
     uart_puts("\n============================\n");
-    uart_puts("  zOS v0.1 -- aarch64\n");
+    uart_puts("  zOS v0.2 -- aarch64\n");
     uart_puts("============================\n\n");
 
-    /* 2. Physical memory allocator */
     mm_init();
-
-    /* 3. MMU -- identity map kernel, enable virtual memory */
     mmu_init();
-
-    /* 4. Interrupt controller */
     gic_init();
-
-    /* 5. Timer for preemptive scheduling */
     timer_init();
-
-    /* 6. Scheduler */
     sched_init();
 
-    /* 7. Virtual filesystem + devices */
+    /* Filesystem */
     vfs_init();
     vfs_mkdir("/tmp");
+    vfs_mkdir("/bin");
     devfs_init();
 
-    /* 8. Set up FDs: stdin/stdout/stderr -> /dev/console */
+    /* Install binaries into /bin/ */
+    install_bin("/bin/ls",    _bin_ls_start,    _bin_ls_end);
+    install_bin("/bin/cat",   _bin_cat_start,   _bin_cat_end);
+    install_bin("/bin/echo",  _bin_echo_start,  _bin_echo_end);
+    install_bin("/bin/hello", _bin_hello_start, _bin_hello_end);
+    install_bin("/bin/ps",    _bin_ps_start,    _bin_ps_end);
+    install_bin("/bin/touch", _bin_touch_start, _bin_touch_end);
+    install_bin("/bin/mkdir", _bin_mkdir_start, _bin_mkdir_end);
+    install_bin("/bin/rm",    _bin_rm_start,    _bin_rm_end);
+
+    /* Set up FDs */
     int console_ino = vfs_lookup("/dev/console");
     sched_init_fds(console_ino);
 
-    /* 9. Create userspace tasks */
-    uint64_t *user_tables = setup_user_task(_user_start, _user_end);
-    if (!user_tables) {
-        uart_puts("[main] FATAL: could not set up user task 1\n");
+    /* Create shell task */
+    uint64_t *shell_tables = setup_shell();
+    if (!shell_tables) {
+        uart_puts("[main] FATAL: could not set up shell\n");
         while (1) __asm__ volatile("wfe");
     }
-    sched_create_task(0x00400000, user_tables);
+    sched_create_task(0x00400000, shell_tables);
 
-    uint64_t *user2_tables = setup_user_task(_user2_start, _user2_end);
-    if (!user2_tables) {
-        uart_puts("[main] FATAL: could not set up user task 2\n");
-        while (1) __asm__ volatile("wfe");
-    }
-    sched_create_task(0x00400000, user2_tables);
+    uart_puts("[main] starting shell...\n\n");
 
-    uart_puts("[main] starting user tasks...\n\n");
-
-    /* Enable interrupts and let the scheduler pick the first task */
     __asm__ volatile("msr daifclr, #0xF");
     sched_start();
 
-    /* Should never reach here */
-    uart_puts("[main] ERROR: returned from sched_start?!\n");
     while (1) __asm__ volatile("wfe");
 }
