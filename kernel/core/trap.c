@@ -16,6 +16,7 @@
 #include "sched.h"
 #include "syscall.h"
 #include "mmu.h"
+#include "gui.h"
 #include "uart.h"
 
 /* ESR_EL1 exception class (bits [31:26]) */
@@ -33,6 +34,7 @@ void trap_irq(struct trap_frame *frame)
     if (irq == TIMER_IRQ) {
         timer_handler();
         sched_tick();
+        gui_tick();
         gic_end_interrupt(irq);
         if ((frame->spsr & 0xF) == 0)
             schedule(frame);

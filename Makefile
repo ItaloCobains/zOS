@@ -17,7 +17,8 @@ ARCH_SRC = arch/start.S arch/vectors.S
 ARCH_OBJ = $(ARCH_SRC:.S=.o)
 
 # Kernel core
-CORE_SRC = kernel/core/main.c kernel/core/syscall.c kernel/core/trap.c
+CORE_SRC = kernel/core/main.c kernel/core/syscall.c kernel/core/trap.c \
+           kernel/core/gui.c
 
 # Process management
 PROC_SRC = kernel/proc/sched.c kernel/proc/fork.c kernel/proc/exec.c \
@@ -31,7 +32,7 @@ KLIB_SRC = kernel/lib/string.c
 
 # Drivers
 DRV_SRC  = drivers/uart.c drivers/gic.c drivers/timer.c drivers/virtio_blk.c \
-           drivers/fb.c
+           drivers/fb.c drivers/mouse.c
 
 # Filesystem
 FS_SRC   = fs/vfs.c fs/devfs.c fs/ext2.c
@@ -139,7 +140,8 @@ gui: $(KERNEL_BIN) disk.img
 		-kernel $(KERNEL_BIN) \
 		-drive file=disk.img,format=raw,if=none,id=disk0 \
 		-device virtio-blk-device,drive=disk0 \
-		-device ramfb
+		-device ramfb \
+		-device virtio-tablet-device
 
 debug: $(KERNEL_BIN)
 	qemu-system-aarch64 \
