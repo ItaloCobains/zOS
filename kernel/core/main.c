@@ -15,6 +15,7 @@
 #include "devfs.h"
 #include "virtio_blk.h"
 #include "ext2.h"
+#include "fb.h"
 
 /* Linker symbols for embedded binaries */
 extern char _bin_shell_start[], _bin_shell_end[];
@@ -72,6 +73,13 @@ void kmain(void)
     vfs_mkdir("/tmp");
     vfs_mkdir("/bin");
     devfs_init();
+
+    /* Framebuffer (if ramfb device present) */
+    fb_init();
+    if (fb_get_buffer()) {
+        fb_text(20, 20, "zOS v0.2", COLOR_WHITE, COLOR_DARKGRAY);
+        fb_text(20, 40, "Framebuffer initialized: 1024x768x32", COLOR_LIGHTGRAY, COLOR_DARKGRAY);
+    }
 
     /* Block device + ext2 filesystem */
     virtio_blk_init();

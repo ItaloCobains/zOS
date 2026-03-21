@@ -30,7 +30,8 @@ MM_SRC   = kernel/mm/mm.c kernel/mm/mmu.c
 KLIB_SRC = kernel/lib/string.c
 
 # Drivers
-DRV_SRC  = drivers/uart.c drivers/gic.c drivers/timer.c drivers/virtio_blk.c
+DRV_SRC  = drivers/uart.c drivers/gic.c drivers/timer.c drivers/virtio_blk.c \
+           drivers/fb.c
 
 # Filesystem
 FS_SRC   = fs/vfs.c fs/devfs.c fs/ext2.c
@@ -128,6 +129,17 @@ run: $(KERNEL_BIN) disk.img
 		-kernel $(KERNEL_BIN) \
 		-drive file=disk.img,format=raw,if=none,id=disk0 \
 		-device virtio-blk-device,drive=disk0
+
+gui: $(KERNEL_BIN) disk.img
+	qemu-system-aarch64 \
+		-machine virt \
+		-cpu cortex-a72 \
+		-m 128M \
+		-serial stdio \
+		-kernel $(KERNEL_BIN) \
+		-drive file=disk.img,format=raw,if=none,id=disk0 \
+		-device virtio-blk-device,drive=disk0 \
+		-device ramfb
 
 debug: $(KERNEL_BIN)
 	qemu-system-aarch64 \
