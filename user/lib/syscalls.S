@@ -111,3 +111,9 @@ sys_getpid:
     mov     x8, #17
     svc     #0
     ret
+
+.global sys_pipe
+sys_pipe:
+    mov     x8, #18
+    svc     #0
+    ret

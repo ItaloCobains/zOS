@@ -44,6 +44,13 @@ static int readline(char *buf, int max)
         int n = sys_read(0, &ch, 1);
         if (n <= 0) { sys_yield(); continue; }
         int c = (unsigned char)ch;
+        if (c == 3) {
+            /* Ctrl+C: cancel current line */
+            printf("^C\n");
+            i = 0;
+            buf[0] = 0;
+            return 0;
+        }
         if (c == '\r' || c == '\n') { printf("\n"); break; }
         if ((c == 127 || c == 8) && i > 0) {
             i--;
@@ -164,6 +171,70 @@ int main(const char *startup_args)
         /* Builtin: pwd */
         if (strcmp(cmd, "pwd") == 0) {
             printf("%s\n", cwd);
+            continue;
+        }
+
+        /* Check for pipe: cmd1 | cmd2 */
+        char *pipe_pos = NULL;
+        for (char *p = line; *p; p++) {
+            if (*p == '|') { pipe_pos = p; break; }
+        }
+
+        if (pipe_pos) {
+            /* Split into two commands */
+            *pipe_pos = 0;
+            char *cmd2_line = pipe_pos + 1;
+            while (*cmd2_line == ' ') cmd2_line++;
+
+            /* Re-parse cmd1 */
+            parse_line(line, &cmd, &args, &redir);
+
+            char path1[64] = "/bin/";
+            { int pi = 5; char *c = cmd; while (*c && pi < 63) path1[pi++] = *c++; path1[pi] = 0; }
+
+            char resolved_args[128];
+            if (strcmp(cmd, "ls") == 0 && (!args || !args[0])) args = cwd;
+            else if (args && args[0] && args[0] != '/' && strcmp(cmd, "echo") != 0) {
+                resolve_path(args, resolved_args, sizeof(resolved_args));
+                args = resolved_args;
+            }
+
+            /* Parse cmd2 */
+            char *cmd2, *args2, *redir2;
+            parse_line(cmd2_line, &cmd2, &args2, &redir2);
+
+            char path2[64] = "/bin/";
+            { int pi = 5; char *c = cmd2; while (*c && pi < 63) path2[pi++] = *c++; path2[pi] = 0; }
+
+            /* Create pipe */
+            int pipe_fds[2];
+            if (sys_pipe(pipe_fds) < 0) { printf("pipe failed\n"); continue; }
+
+            /* Fork cmd1: stdout -> pipe write end */
+            int pid1 = sys_fork();
+            if (pid1 == 0) {
+                sys_close(pipe_fds[0]); /* close read end */
+                sys_close(1);
+                /* pipe_fds[1] becomes fd 1 (lowest free) */
+                sys_exec(path1, args);
+                sys_exit();
+            }
+
+            /* Fork cmd2: stdin -> pipe read end */
+            int pid2 = sys_fork();
+            if (pid2 == 0) {
+                sys_close(pipe_fds[1]); /* close write end */
+                sys_close(0);
+                /* pipe_fds[0] becomes fd 0 (lowest free) */
+                sys_exec(path2, args2);
+                sys_exit();
+            }
+
+            /* Parent: close both pipe ends and wait */
+            sys_close(pipe_fds[0]);
+            sys_close(pipe_fds[1]);
+            sys_wait(pid1);
+            sys_wait(pid2);
             continue;
         }
 

@@ -37,5 +37,6 @@ struct window *wm_get_window(int id);
 /* Write a character to a window's console */
 void wm_putc(int win_id, char c);
 void wm_puts(int win_id, const char *s);
+int  wm_check_taskbar_click(int mx, int my);
 
 #endif

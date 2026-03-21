@@ -35,7 +35,7 @@ DRV_SRC  = drivers/uart.c drivers/gic.c drivers/timer.c drivers/virtio_blk.c \
            drivers/fb.c drivers/mouse.c drivers/keyboard.c drivers/gfx_console.c
 
 # Filesystem
-FS_SRC   = fs/vfs.c fs/devfs.c fs/ext2.c
+FS_SRC   = fs/vfs.c fs/devfs.c fs/ext2.c fs/pipe.c
 
 CORE_OBJ = $(CORE_SRC:.c=.o)
 PROC_OBJ = $(PROC_SRC:.c=.o)

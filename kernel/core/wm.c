@@ -134,6 +134,9 @@ int wm_draw_all(void)
     /* Taskbar */
     fb_rect(0, FB_HEIGHT - 32, FB_WIDTH, 32, COLOR_GRAY);
     fb_text(8, FB_HEIGHT - 24, "zOS", COLOR_WHITE, COLOR_GRAY);
+    /* Terminal button */
+    fb_rect(60, FB_HEIGHT - 28, 80, 24, TITLE_ACTIVE);
+    fb_text(64, FB_HEIGHT - 24, "Terminal", COLOR_WHITE, TITLE_ACTIVE);
 
     /* Draw unfocused windows first, focused last (on top) */
     for (int i = 0; i < MAX_WINDOWS; i++) {
@@ -258,4 +261,14 @@ void wm_puts(int win_id, const char *s)
 {
     while (*s)
         wm_putc(win_id, *s++);
+}
+
+/* Returns 1 if click was on the Terminal button in the taskbar */
+int wm_check_taskbar_click(int mx, int my)
+{
+    if (my >= FB_HEIGHT - 28 && my < FB_HEIGHT - 4 &&
+        mx >= 60 && mx < 140) {
+        return 1;
+    }
+    return 0;
 }

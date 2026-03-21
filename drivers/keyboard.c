@@ -63,8 +63,8 @@ static struct virtio_input_event events[QUEUE_SIZE] __attribute__((aligned(16)))
 static char key_buf[KEY_BUF_SIZE];
 static int key_head, key_tail;
 
-/* Scancode to ASCII (US QWERTY, lowercase only for simplicity) */
-static const char scancode_to_ascii[128] = {
+/* Scancode to ASCII (US QWERTY) */
+static const char scancode_lower[128] = {
     0,  27, '1','2','3','4','5','6','7','8','9','0','-','=','\b',
     '\t','q','w','e','r','t','y','u','i','o','p','[',']','\r',
     0,  'a','s','d','f','g','h','j','k','l',';','\'','`',
@@ -74,6 +74,24 @@ static const char scancode_to_ascii[128] = {
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 };
+
+static const char scancode_upper[128] = {
+    0,  27, '!','@','#','$','%','^','&','*','(',')','_','+','\b',
+    '\t','Q','W','E','R','T','Y','U','I','O','P','{','}','\r',
+    0,  'A','S','D','F','G','H','J','K','L',':','"','~',
+    0,  '|','Z','X','C','V','B','N','M','<','>','?',0,
+    '*',0,  ' ', 0,0,0,0,0,0,0,0,0,0,0,0,0,
+    '7','8','9','-','4','5','6','+','1','2','3','0','.',
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+};
+
+/* Shift scancodes: left=42, right=54 */
+#define KEY_LSHIFT 42
+#define KEY_RSHIFT 54
+#define KEY_CTRL   29
+static int shift_held;
+static int ctrl_held;
 
 static uint32_t reg_read(uint32_t off)  { return base[off / 4]; }
 static void reg_write(uint32_t off, uint32_t v) { base[off / 4] = v; }
@@ -149,14 +167,25 @@ void keyboard_poll(void)
         uint32_t id = used->ring[last_used_idx % QUEUE_SIZE].id;
         struct virtio_input_event *ev = &events[id];
 
-        /* Key press (value=1), ignore release (value=0) and repeat (value=2) */
-        if (ev->type == EV_KEY && ev->value == 1 && ev->code < 128) {
-            char c = scancode_to_ascii[ev->code];
-            if (c) {
-                int next = (key_head + 1) % KEY_BUF_SIZE;
-                if (next != key_tail) {
-                    key_buf[key_head] = c;
-                    key_head = next;
+        if (ev->type == EV_KEY && ev->code < 128) {
+            /* Track shift and ctrl state */
+            if (ev->code == KEY_LSHIFT || ev->code == KEY_RSHIFT) {
+                shift_held = (ev->value != 0);
+            } else if (ev->code == KEY_CTRL) {
+                ctrl_held = (ev->value != 0);
+            } else if (ev->value == 1) {
+                /* Key press */
+                char c = shift_held ? scancode_upper[ev->code]
+                                    : scancode_lower[ev->code];
+                /* Ctrl+C -> ASCII 3 (ETX) */
+                if (ctrl_held && c == 'c') c = 3;
+
+                if (c) {
+                    int next = (key_head + 1) % KEY_BUF_SIZE;
+                    if (next != key_tail) {
+                        key_buf[key_head] = c;
+                        key_head = next;
+                    }
                 }
             }
         }

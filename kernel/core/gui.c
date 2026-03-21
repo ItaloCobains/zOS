@@ -96,7 +96,18 @@ void gui_tick(void)
 
     if (left_pressed) {
         erase_cursor();
-        wm_handle_click(ms.x, ms.y);
+        /* Check taskbar buttons first */
+        if (wm_check_taskbar_click(ms.x, ms.y)) {
+            static int term_x = 80;
+            int win = wm_create_window(term_x, 60, 500, 380, "Terminal");
+            if (win >= 0) {
+                wm_puts(win, "New terminal window\n");
+                term_x += 30;
+                if (term_x > 400) term_x = 80;
+            }
+        } else {
+            wm_handle_click(ms.x, ms.y);
+        }
         need_cursor_update = 1;
     }
 

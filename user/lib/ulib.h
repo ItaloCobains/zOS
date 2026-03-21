@@ -22,6 +22,7 @@ int  sys_fork(void);
 int  sys_exec(const char *path, const char *args);
 int  sys_wait(int pid);
 int  sys_getpid(void);
+int  sys_pipe(int fds[2]);
 
 /* printf */
 void printf(const char *fmt, ...);

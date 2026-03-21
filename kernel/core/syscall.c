@@ -15,6 +15,7 @@
 #include "uart.h"
 #include "vfs.h"
 #include "gui.h"
+#include "pipe.h"
 
 void syscall_handler(struct trap_frame *frame)
 {
@@ -146,6 +147,20 @@ void syscall_handler(struct trap_frame *frame)
     case SYS_GETPID:
         frame->regs[0] = (uint64_t)sched_getpid();
         break;
+
+    case SYS_PIPE: {
+        /* pipe(fds) -> 0 or -1. fds[0]=read, fds[1]=write */
+        int *user_fds = (int *)frame->regs[0];
+        int read_ino, write_ino;
+        if (pipe_create(&read_ino, &write_ino) < 0) {
+            frame->regs[0] = (uint64_t)-1;
+            break;
+        }
+        user_fds[0] = sched_alloc_fd(read_ino);
+        user_fds[1] = sched_alloc_fd(write_ino);
+        frame->regs[0] = 0;
+        break;
+    }
 
     default:
         uart_puts("[syscall] unknown syscall: ");
