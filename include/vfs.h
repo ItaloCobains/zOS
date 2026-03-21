@@ -12,6 +12,7 @@
 #define INODE_FILE 1
 #define INODE_DIR 2
 #define INODE_DEVICE 3
+#define INODE_MOUNT  4
 
 #define O_RDONLY 0
 #define O_WRONLY 1
@@ -56,5 +57,9 @@ int vfs_readdir(int inode, struct dirent *entries, int max);
 
 int vfs_lookup(const char *path);
 int vfs_register_device(const char *path, struct file_ops *ops);
+void vfs_set_ext2_available(void);
+
+/* Ext2 inode encoding: VFS inode = EXT2_INO_BASE + ext2_ino */
+#define EXT2_INO_BASE 10000
 
 #endif

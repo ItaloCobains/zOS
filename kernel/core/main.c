@@ -13,6 +13,8 @@
 #include "sched.h"
 #include "vfs.h"
 #include "devfs.h"
+#include "virtio_blk.h"
+#include "ext2.h"
 
 /* Linker symbols for embedded binaries */
 extern char _bin_shell_start[], _bin_shell_end[];
@@ -70,6 +72,10 @@ void kmain(void)
     vfs_mkdir("/tmp");
     vfs_mkdir("/bin");
     devfs_init();
+
+    /* Block device + ext2 filesystem */
+    virtio_blk_init();
+    ext2_init();
 
     /* Install user binaries into /bin/ */
     install_bin("/bin/ls",    _bin_ls_start,    _bin_ls_end);

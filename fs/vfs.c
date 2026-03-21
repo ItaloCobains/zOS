@@ -1,11 +1,30 @@
 /*
  * vfs.c -- Virtual File System layer.
- * Routes file operations to the correct backend (ramfs, devfs).
+ * Routes file operations to the correct backend (ramfs, devfs, ext2).
  */
 
 #include "vfs.h"
+#include "ext2.h"
 #include "types.h"
 #include "uart.h"
+
+/* Check if a path is under /disk/ and return the subpath */
+static const char *ext2_subpath(const char *path)
+{
+    if (path[0] == '/' && path[1] == 'd' && path[2] == 'i' &&
+        path[3] == 's' && path[4] == 'k') {
+        if (path[5] == 0) return "/";
+        if (path[5] == '/') return path + 5;
+    }
+    return NULL;
+}
+
+static int ext2_available = 0;
+
+void vfs_set_ext2_available(void)
+{
+    ext2_available = 1;
+}
 
 static struct inode inodes[MAX_INODES];
 
@@ -117,8 +136,21 @@ void vfs_init(void)
 
 int vfs_open(const char *path, int flags)
 {
-    int ino = vfs_lookup(path);
+    /* Route /disk/ paths to ext2 */
+    const char *sub = ext2_subpath(path);
+    if (sub && ext2_available) {
+        int ino = ext2_path_lookup(sub);
+        if (ino >= 0)
+            return EXT2_INO_BASE + ino;
+        if (flags & O_CREATE) {
+            ino = ext2_create(sub, EXT2_S_IFREG | 0644);
+            if (ino >= 0)
+                return EXT2_INO_BASE + ino;
+        }
+        return -1;
+    }
 
+    int ino = vfs_lookup(path);
     if (ino >= 0)
         return ino;
 
@@ -149,6 +181,9 @@ int vfs_open(const char *path, int flags)
 
 int vfs_read(int ino, void *buf, size_t len, size_t offset)
 {
+    if (ino >= EXT2_INO_BASE)
+        return ext2_read_file(ino - EXT2_INO_BASE, buf, len, offset);
+
     if (ino < 0 || ino >= MAX_INODES)
         return -1;
 
@@ -176,6 +211,9 @@ int vfs_read(int ino, void *buf, size_t len, size_t offset)
 
 int vfs_write(int ino, const void *buf, size_t len, size_t offset)
 {
+    if (ino >= EXT2_INO_BASE)
+        return ext2_write_file(ino - EXT2_INO_BASE, buf, len, offset);
+
     if (ino < 0 || ino >= MAX_INODES)
         return -1;
 
@@ -202,6 +240,17 @@ int vfs_write(int ino, const void *buf, size_t len, size_t offset)
 
 int vfs_stat(const char *path, struct stat *st)
 {
+    const char *sub = ext2_subpath(path);
+    if (sub && ext2_available) {
+        int ino = ext2_path_lookup(sub);
+        if (ino < 0) return -1;
+        struct ext2_inode ei;
+        ext2_read_inode_pub(ino, &ei);
+        st->type = (ei.i_mode & EXT2_S_IFDIR) ? INODE_DIR : INODE_FILE;
+        st->size = ei.i_size;
+        return 0;
+    }
+
     int ino = vfs_lookup(path);
     if (ino < 0)
         return -1;
@@ -213,6 +262,12 @@ int vfs_stat(const char *path, struct stat *st)
 
 int vfs_mkdir(const char *path)
 {
+    const char *sub = ext2_subpath(path);
+    if (sub && ext2_available) {
+        int ino = ext2_create(sub, EXT2_S_IFDIR | 0755);
+        return (ino >= 0) ? 0 : -1;
+    }
+
     if (vfs_lookup(path) >= 0)
         return -1;
 
@@ -264,6 +319,9 @@ int vfs_unlink(const char *path)
 
 int vfs_readdir(int ino, struct dirent *entries, int max)
 {
+    if (ino >= EXT2_INO_BASE)
+        return ext2_readdir(ino - EXT2_INO_BASE, entries, max);
+
     if (ino < 0 || ino >= MAX_INODES)
         return -1;
 
