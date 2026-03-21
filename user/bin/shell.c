@@ -40,8 +40,10 @@ static int readline(char *buf, int max)
 {
     int i = 0;
     while (i < max - 1) {
-        int c = sys_getc();
-        if (c < 0) { sys_yield(); continue; }
+        char ch;
+        int n = sys_read(0, &ch, 1);
+        if (n <= 0) { sys_yield(); continue; }
+        int c = (unsigned char)ch;
         if (c == '\r' || c == '\n') { printf("\n"); break; }
         if ((c == 127 || c == 8) && i > 0) {
             i--;

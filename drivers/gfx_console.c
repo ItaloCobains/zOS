@@ -22,7 +22,10 @@ static int gtty_read(int inode, void *buf, size_t len, size_t offset)
 
     uint8_t *dst = (uint8_t *)buf;
     for (size_t i = 0; i < len; i++) {
+        /* Try virtio keyboard first, then UART */
         int c = keyboard_getc();
+        if (c < 0)
+            c = uart_getc();
         if (c < 0)
             return (int)i;
         dst[i] = (uint8_t)c;

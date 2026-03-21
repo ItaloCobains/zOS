@@ -102,18 +102,16 @@ void kmain(void)
 
     /*
      * Set up FDs:
-     *   stdin (fd 0)  -> /dev/console (UART, type in your terminal)
-     *   stdout (fd 1) -> /dev/gtty (graphical window, if available)
-     *   stderr (fd 2) -> /dev/console (UART)
+     *   If GUI: stdin/stdout -> /dev/gtty, stderr -> /dev/console
+     *   If no GUI: all -> /dev/console (UART)
      */
     int uart_ino = vfs_lookup("/dev/console");
     int gtty = gfx_console_inode();
     sched_init_fds(uart_ino);  /* default all to UART */
     if (gtty >= 0) {
-        /* Override stdout to graphical terminal */
         extern struct task tasks[];
-        extern int current_task;
         for (int t = 0; t < 8; t++) {
+            tasks[t].fds[0].inode = gtty;  /* stdin -> gtty (keyboard + UART) */
             tasks[t].fds[1].inode = gtty;  /* stdout -> window */
         }
         uart_puts("[main] stdout -> graphical terminal\n");

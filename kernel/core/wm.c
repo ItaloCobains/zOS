@@ -215,7 +215,14 @@ void wm_putc(int win_id, char c)
     struct window *win = wm_get_window(win_id);
     if (!win) return;
 
-    if (c == '\n') {
+    if (c == '\b' || c == 127) {
+        /* Backspace: move cursor back, clear character */
+        if (win->cursor_col > 0) {
+            win->cursor_col--;
+            if (win->cursor_row < WIN_MAX_ROWS && win->cursor_col < WIN_MAX_COLS)
+                win->text[win->cursor_row][win->cursor_col] = ' ';
+        }
+    } else if (c == '\n') {
         win->cursor_col = 0;
         win->cursor_row++;
     } else if (c == '\r') {
