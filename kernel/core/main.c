@@ -98,6 +98,7 @@ void kmain(void)
     ext2_init();
 
     /* Install user binaries into /bin/ */
+    install_bin("/bin/shell", _bin_shell_start, _bin_shell_end);
     install_bin("/bin/ls",    _bin_ls_start,    _bin_ls_end);
     install_bin("/bin/cat",   _bin_cat_start,   _bin_cat_end);
     install_bin("/bin/echo",  _bin_echo_start,  _bin_echo_end);
@@ -110,7 +111,7 @@ void kmain(void)
     install_bin("/bin/login", _bin_login_start, _bin_login_end);
     install_bin("/bin/ping",  _bin_ping_start,  _bin_ping_end);
     install_bin("/bin/beep",  _bin_beep_start,  _bin_beep_end);
-    uart_puts("[main] 12 binaries installed in /bin/\n");
+    uart_puts("[main] 13 binaries installed in /bin/\n");
 
     /*
      * Set up FDs:
